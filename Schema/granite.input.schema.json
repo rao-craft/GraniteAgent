@@ -1,5 +1,5 @@
 {
-  "$id" : "https://github.com/Rao-Craft-Agents/GraniteAgent/blob/main/Schema/granite.input.schema.json",
+  "$id" : "https://github.com/rao-craft/GraniteAgent/blob/main/Schema/granite.input.schema.json",
   "$schema" : "https://json-schema.org/draft/2020-12/schema",
   "description" : "Every field a call to granite may give; `directory` is Craft's, never the model's.",
   "properties" : {

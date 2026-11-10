@@ -15,7 +15,7 @@ let graniteRecord: GraniteRoster.Record = { GraniteRoster.record(GraniteAppAgent
 ```
 
 In [Craft](https://github.com/riteshpakala/Craft), install it from the Agent Store or with
-`craft agents add https://github.com/Rao-Craft-Agents/GraniteAgent.git`, then say `$granite` in a request:
+`craft agents add https://github.com/rao-craft/GraniteAgent.git`, then say `$granite` in a request:
 
 ```
 $granite start a recipe app, then a service that keeps the recipes (loaded a page at a time, kept between

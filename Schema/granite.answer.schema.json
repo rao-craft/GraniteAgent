@@ -1,5 +1,5 @@
 {
-  "$id" : "https://github.com/Rao-Craft-Agents/GraniteAgent/blob/main/Schema/granite.answer.schema.json",
+  "$id" : "https://github.com/rao-craft/GraniteAgent/blob/main/Schema/granite.answer.schema.json",
   "$schema" : "https://json-schema.org/draft/2020-12/schema",
   "allOf" : [
     {

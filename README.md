@@ -46,7 +46,7 @@ its API clients, `design` and `loom` its look, `platform` its menus and entitlem
 ## Get it
 
 In Craft, install Granite from the Agent Store, or run
-`craft agents add https://github.com/Rao-Craft-Agents/GraniteAgent.git`, then say `$granite` in a request.
+`craft agents add https://github.com/rao-craft/GraniteAgent.git`, then say `$granite` in a request.
 
 ## Requirements
 
