@@ -1,16 +1,177 @@
 //  WHAT: The layout service (where the app is), the routes over Granite's router, and Device: the files
-//        `make: navigation` writes beside the navigation views.
+//        `make: navigation` writes beside the navigation views. A `Shape` that says a default, sheets or a gate adds
+//        to them (the tab a plain launch opens on, the sheet over the tabs, the launch rule past the gate); a plain
+//        one writes them as they were.
 
 import Foundation
 
 extension NavigationTemplates {
     /// The layout service's files, by their path inside its folder.
-    static func layoutService(app: String, first: String) -> [(path: String, text: String)] {
-        [("LayoutService.swift", layout),
-         ("LayoutService+Center.swift", layoutCenter(app: app, first: first)),
-         ("Reducers/LayoutService.Set.swift", layoutSet),
-         ("Ops/LayoutOps.swift", layoutOps),
-         ("Models/LayoutStyle.swift", layoutStyle)]
+    static func layoutService(app: String, first: String, shape: Shape? = nil) -> [(path: String, text: String)] {
+        guard let shape, !shape.isPlain else {
+            return [("LayoutService.swift", layout),
+                    ("LayoutService+Center.swift", layoutCenter(app: app, first: first)),
+                    ("Reducers/LayoutService.Set.swift", layoutSet),
+                    ("Ops/LayoutOps.swift", layoutOps),
+                    ("Models/LayoutStyle.swift", layoutStyle)]
+        }
+        return [("LayoutService.swift", layout(shape)),
+                ("LayoutService+Center.swift", layoutCenter(app: app, shape: shape)),
+                ("Reducers/LayoutService.Set.swift", layoutSet(shape)),
+                ("Ops/LayoutOps.swift", layoutOps(shape)),
+                ("Models/LayoutStyle.swift", layoutStyle)]
+    }
+
+    /// LayoutService with what the shape adds: `select` that knows the sheets and the gate, `present` and
+    /// `closeSheet`.
+    static func layout(_ shape: Shape) -> String {
+        var text = layout
+        let select = "    /// Goes to `destination`.\n"
+        if let sheet = shape.sheets.first {
+            text = text.replacingOccurrences(of: select, with: "    /// Goes to `destination`: a tab is selected and any sheet closes; a sheet goes up over the tab on screen"
+                                             + (shape.gate == nil ? ".\n" : ";\n    /// the gate is shown while it holds, never gone to.\n"))
+            let closeDetail = """
+                    /// Closes the detail pane.
+                    func closeDetail() {
+                        set(.detail(nil))
+                    }
+
+                """
+            text = text.replacingOccurrences(of: closeDetail, with: closeDetail + """
+
+                    /// Puts `destination` up in a sheet over the tabs: `layout.present(.\(sheet))`.
+                    func present(_ destination: AppDestination) {
+                        set(.sheet(destination))
+                    }
+
+                    /// Closes the sheet over the tabs.
+                    func closeSheet() {
+                        set(.sheet(nil))
+                    }
+
+                """)
+        } else if shape.gate != nil {
+            text = text.replacingOccurrences(of: select, with: "    /// Goes to `destination`, a tab; the gate is shown while it holds, never gone to.\n")
+        }
+        return text
+    }
+
+    /// The center when the shape says a default, sheets or a gate: the state starts where the launch asks
+    /// (`init(launch:)`, what the tests read), a sheet sits beside the tab, and with a default nothing is kept between
+    /// launches, so a plain launch always opens on it.
+    static func layoutCenter(app: String, shape: Shape) -> String {
+        let opening = shape.opening
+        var code = Code()
+        code.block("""
+            import Foundation
+            import Granite
+            import GraniteAgents
+
+            extension LayoutService {
+            """)
+        code.indent()
+        code.open("struct Center: GraniteCenter {")
+        code.open("struct State: GraniteState {")
+        code.line("/// The tab on screen: the one a launch asks for (`-destination <name>`), else `.\(opening)`"
+                  + (shape.isDefault ? ", the default." : ", the first."))
+        code.line("var destination: AppDestination")
+        if let sheet = shape.sheets.first {
+            code.line("/// The sheet up over the tabs, nil when none is: `layout.present(.\(sheet))`.")
+            code.line("var sheet: AppDestination?")
+        }
+        code.line("/// Whether the window is compact (a tab bar) or expanded (a sidebar beside the page).")
+        code.line("var style: LayoutStyle = .compact")
+        code.line("/// What the detail pane shows, by id; nil when it is closed.")
+        code.line("var detail: String?")
+        code.line()
+        code.scope("init() {") { $0.line("self.init(launch: AppDestination.launchArgument)") }
+        code.line()
+        var opens = ["on that tab"]
+        if !shape.sheets.isEmpty { opens.append("on `.\(opening)` with the sheet up over it when it names a sheet") }
+        if shape.gate != nil { opens.append("on `.\(opening)`, behind the gate, when it names the gate") }
+        opens.append("on `.\(opening)` when it names nothing")
+        code.doc("Where a launch that asks for `launch` (`-destination <name>`) opens: " + opens.joined(separator: "; ") + ".")
+        code.scope("init(launch: AppDestination?) {") { code in
+            code.line(shape.hasNonTabs ? "destination = launch.flatMap { $0.isTab ? $0 : nil } ?? .\(opening)" : "destination = launch ?? .\(opening)")
+            if !shape.sheets.isEmpty { code.line("sheet = launch.flatMap { $0.isSheet ? $0 : nil }") }
+        }
+        if !shape.isDefault {
+            code.line()
+            code.scope("enum CodingKeys: String, CodingKey {") { $0.line("case destination") }
+            code.line()
+            code.line("/// Only the tab on screen is kept between launches; one the app no longer has, or no longer lists as a tab,")
+            code.line("/// reads as the first, and a destination a launch asks for wins over both.")
+            code.scope("init(from decoder: Decoder) throws {") { code in
+                code.line("let container = try decoder.container(keyedBy: CodingKeys.self)")
+                code.line("self.init(launch: AppDestination.launchArgument)")
+                code.scope("if AppDestination.launchArgument == nil, let stored = try? container.decodeIfPresent(AppDestination.self, forKey: .destination), stored.isTab {") { code in
+                    code.line("destination = stored")
+                }
+            }
+        }
+        code.close()
+        code.line()
+        code.line("@Event var set: Set.Reducer")
+        code.line()
+        if shape.isDefault {
+            code.line("/// Nothing of where the app was is kept between launches: a plain launch opens on `.\(opening)`, the default.")
+            code.line("@Store var state: State")
+        } else {
+            code.line("@Store(persist: \"persistence.\(app).layout.0001\", autoSave: true, preload: true) var state: State")
+        }
+        code.line()
+        code.line("init() {}")
+        code.close()
+        code.dedent()
+        code.line("}")
+        return code.text
+    }
+
+    /// The writer with a kind for the sheet.
+    static func layoutSet(_ shape: Shape) -> String {
+        guard !shape.sheets.isEmpty else { return layoutSet }
+        return layoutSet.replacingOccurrences(of: "                case detail(String?)\n",
+                                              with: "                case detail(String?)\n                case sheet(AppDestination?)\n")
+    }
+
+    /// Ops that put a sheet up over the tab on screen, and never go to the gate.
+    static func layoutOps(_ shape: Shape) -> String {
+        guard shape.hasNonTabs else { return layoutOps }
+        let destination = """
+                    case .destination(let destination):
+                        state.destination = destination
+                        state.detail = nil
+
+            """
+        let routed: String
+        if shape.sheets.isEmpty {
+            routed = """
+                        case .destination(let destination):
+                            // The gate is shown while it holds, never gone to.
+                            guard destination.isTab else { return }
+                            state.destination = destination
+                            state.detail = nil
+
+                """
+        } else {
+            routed = """
+                        case .destination(let destination):
+                            if destination.isSheet {
+                                // A sheet goes up over the tab on screen, never in its place.
+                                state.sheet = destination
+                            } else if destination.isTab {
+                \(shape.gate == nil ? "" : "                // The gate is shown while it holds, never gone to: only a tab is.\n")                state.destination = destination
+                                state.detail = nil
+                                state.sheet = nil
+                            }
+
+                """
+        }
+        var text = layoutOps.replacingOccurrences(of: destination, with: routed)
+        if !shape.sheets.isEmpty {
+            text = text.replacingOccurrences(of: "        case .clear:\n", with: "        case .sheet(let destination):\n            state.sheet = destination\n        case .clear:\n")
+        }
+        return text
     }
 
     static let layout = """
@@ -194,7 +355,116 @@ extension NavigationTemplates {
 
         """
 
-    static func layoutTests(module: String, first: String, second: String) -> String {
+    static func layoutTests(module: String, first: String, second: String, shape: Shape? = nil) -> String {
+        guard let shape, !shape.isPlain else { return plainLayoutTests(module: module, first: first, second: second) }
+        let opening = shape.opening
+        var code = Code()
+        code.block("""
+            import Foundation
+            import Testing
+            @testable import \(module)
+
+            /// Where the app is, one test a change: what LayoutService's writer does, run without a relay, and where a
+            /// launch opens.
+            struct LayoutOpsTests {
+                @Test func goingSomewhereClosesTheDetail() {
+                    var state = LayoutService.Center.State()
+                    LayoutOps.apply(.detail("item-1"), to: &state)
+                    LayoutOps.apply(.destination(.\(second)), to: &state)
+                    #expect(state.destination == .\(second))
+                    #expect(state.detail == nil)
+                }
+
+                @Test func theStyleIsWritten() {
+                    var state = LayoutService.Center.State()
+                    LayoutOps.apply(.style(.expanded), to: &state)
+                    #expect(state.style == .expanded)
+                }
+
+                @Test func theDetailOpensAndCloses() {
+                    var state = LayoutService.Center.State()
+                    LayoutOps.apply(.detail("item-1"), to: &state)
+                    #expect(state.detail == "item-1")
+                    LayoutOps.apply(.detail(nil), to: &state)
+                    #expect(state.detail == nil)
+                }
+
+                @Test func clearStartsOver() {
+                    var state = LayoutService.Center.State()
+                    LayoutOps.apply(.destination(.\(second)), to: &state)
+                    LayoutOps.apply(.clear, to: &state)
+                    #expect(state == LayoutService.Center.State())
+                }
+            """)
+        code.indent()
+        if shape.isDefault {
+            code.line()
+            code.scope("@Test func aPlainLaunchOpensOnTheDefault() {") { code in
+                code.line("#expect(LayoutService.Center.State(launch: nil).destination == .\(opening))")
+                code.line("#expect(LayoutService.Center.State(launch: .\(second)).destination == .\(second))")
+            }
+        } else {
+            code.line()
+            code.scope("@Test func aDestinationTheAppNoLongerHasReadsAsTheFirst() throws {") { code in
+                code.line("let stored = try PropertyListEncoder().encode([\"destination\": \"a-place-long-gone\"])")
+                code.line("let state = try PropertyListDecoder().decode(LayoutService.Center.State.self, from: stored)")
+                code.line("#expect(state.destination == .\(opening))")
+            }
+        }
+        if let sheet = shape.sheets.first {
+            code.line()
+            code.scope("@Test func aSheetGoesUpOverTheTabAndCloses() {") { code in
+                code.line("var state = LayoutService.Center.State(launch: nil)")
+                code.line("LayoutOps.apply(.sheet(.\(sheet)), to: &state)")
+                code.line("#expect(state.sheet == .\(sheet))")
+                code.line("#expect(state.destination == .\(opening), \"the tab stays under it\")")
+                code.line("LayoutOps.apply(.sheet(nil), to: &state)")
+                code.line("#expect(state.sheet == nil)")
+            }
+            code.line()
+            code.scope("@Test func aSheetIsNotATab() {") { code in
+                code.line("#expect(!AppDestination.tabs.contains(.\(sheet)))")
+                code.line("var state = LayoutService.Center.State(launch: nil)")
+                code.line("LayoutOps.apply(.destination(.\(sheet)), to: &state)")
+                code.line("#expect(state.sheet == .\(sheet), \"going to a sheet puts it up\")")
+                code.line("#expect(state.destination == .\(opening), \"over the tab on screen\")")
+                code.line("LayoutOps.apply(.destination(.\(second)), to: &state)")
+                code.line("#expect(state.sheet == nil, \"going to a tab closes it\")")
+            }
+            code.line()
+            code.scope("@Test func aLaunchThatAsksForASheetOpensItOverTheDefaultTab() {") { code in
+                code.line("let state = LayoutService.Center.State(launch: .\(sheet))")
+                code.line("#expect(state.destination == .\(opening))")
+                code.line("#expect(state.sheet == .\(sheet))")
+            }
+        }
+        if let gate = shape.gate {
+            code.line()
+            code.scope("@Test func theGateHoldsOnAPlainLaunchAndOnItsOwnName() {") { code in
+                code.line("#expect(!AppDestination.opensPastGate(nil))")
+                code.line("#expect(!AppDestination.opensPastGate(.\(gate)))")
+                code.line("#expect(!AppDestination.tabs.contains(.\(gate)))")
+                code.line("#expect(LayoutService.Center.State(launch: .\(gate)).destination == .\(opening), \"the tabs behind it\")")
+            }
+            code.line()
+            code.scope("@Test func aLaunchThatNamesAnotherDestinationOpensPastTheGate() {") { code in
+                code.scope("for destination in AppDestination.allCases where destination != .\(gate) {") { code in
+                    code.line("#expect(AppDestination.opensPastGate(destination), \"-destination \\(destination.rawValue)\")")
+                }
+            }
+            code.line()
+            code.scope("@Test func theGateIsNeverGoneTo() {") { code in
+                code.line("var state = LayoutService.Center.State(launch: nil)")
+                code.line("LayoutOps.apply(.destination(.\(gate)), to: &state)")
+                code.line("#expect(state.destination == .\(opening))")
+            }
+        }
+        code.dedent()
+        code.line("}")
+        return code.text
+    }
+
+    private static func plainLayoutTests(module: String, first: String, second: String) -> String {
         """
         import Foundation
         import Testing

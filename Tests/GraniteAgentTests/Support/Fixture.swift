@@ -131,6 +131,38 @@ enum Fixture {
     }
 
 
+    /// Seer's shell (2026-11-15): signed out, Sign In full screen; signed in, three tabs with the middle one where a
+    /// plain launch opens, and the other places sheets over them; every place opens from `-destination <name>`.
+    static let seerProject = GraniteAppAgent.Input(make: .project, name: "Seer", bundleId: "com.example.seer")
+
+    static let account = GraniteAppAgent.Input(make: .service, type: "Account", state: ["session String?"], persist: true)
+
+    static let signIn = GraniteAppAgent.Input(
+        make: .component, type: "SignIn", state: [#"name String = """#], relays: ["account: AccountService"], layout: .compose,
+        shows: [#""Name" = state.name"#, #"title = "Sign In""#],
+        actions: [#"submit "Sign In" = account.set(.session(state.name))"#])
+
+    /// A page with nothing of its own yet: its name, empty.
+    static func placeholderPage(_ type: String, symbol: String) -> GraniteAppAgent.Input {
+        GraniteAppAgent.Input(make: .component, type: type, layout: .blank, body: #"ContentUnavailableView("\#(type)", systemImage: "\#(symbol)")"#)
+    }
+
+    static let seerPages = [placeholderPage("Library", symbol: "books.vertical"), placeholderPage("Seer", symbol: "sparkles"),
+                            placeholderPage("Models", symbol: "cpu"), placeholderPage("Profile", symbol: "person.crop.circle"),
+                            placeholderPage("Wallet", symbol: "creditcard")]
+
+    static let seerNavigation = GraniteAppAgent.Input(
+        make: .navigation, relays: ["account: AccountService"],
+        destinations: [#"auth: SignIn "Sign In" person gate"#, #"library: Library "Library" books.vertical"#, #"seer: Seer "Seer" sparkles default"#,
+                       #"models: Models "Models" cpu"#, #"profile: Profile "Profile" person.crop.circle sheet"#, #"wallet: Wallet "Wallet" creditcard sheet"#],
+        gate: "account.state.session == nil")
+
+    /// The Seer page again, once the navigation is there, with a button that puts the wallet up.
+    static let seerWithWallet = GraniteAppAgent.Input(
+        make: .component, type: "Seer", relays: ["layout: LayoutService"], layout: .blank,
+        actions: [#"wallet "Wallet" creditcard = layout.present(.wallet)"#],
+        body: #"ContentUnavailableView("Seer", systemImage: "sparkles")"#)
+
     static let settings = GraniteAppAgent.Input(
 
         make: .component, type: "Settings", relays: ["config: ConfigService"], layout: .settings,

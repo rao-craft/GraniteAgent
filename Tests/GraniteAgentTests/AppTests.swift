@@ -48,6 +48,137 @@ final class AppTests: XCTestCase {
         XCTAssertTrue(home.contains("AppRoot.shared.boot()"), "the boot gating stays")
         XCTAssertTrue(try read(folder, "Shared/Utility/AppRoot.swift").contains("@Relay(.silence) var layout: LayoutService"))
         XCTAssertTrue(try read(folder, "Shared/Utility/Routes.swift").contains("GraniteNavigationWindow.shared.addWindow(id: id"))
+        for (path, added) in [("Shared/Utility/AppDestination.swift", "static var tabs"), ("iOS/PlatformNavigationView.swift", ".sheet(item:"),
+                              ("Services/LayoutService/LayoutService.swift", "func present("), ("Components/Home/Home+View.swift", "AppGate")] {
+            XCTAssertFalse(try read(folder, path).contains(added), "a call with no default, sheet or gate writes what it wrote before them: \(path)")
+        }
+    }
+
+    /// Seer's shell (2026-11-15): Sign In full screen until there is a session, three tabs with the middle one where a
+    /// plain launch opens, the other places sheets over them, and every place reachable from `-destination <name>`.
+    func testADefaultSheetsAndAGateShapeTheNavigation() async throws {
+        let folder = try Fixture.folder()
+        try await Fixture.call(Fixture.seerProject, in: folder)
+        try await Fixture.call(Fixture.account, in: folder)
+        try await Fixture.call(Fixture.signIn, in: folder)
+        for page in Fixture.seerPages { try await Fixture.call(page, in: folder) }
+        let result = try await Fixture.call(Fixture.seerNavigation, in: folder)
+        XCTAssertEqual(result.expected.map(\.name), ["auth", "library", "seer", "models", "profile", "wallet"])
+        XCTAssertTrue(result.notes.contains { $0.contains("a plain launch opens on `seer`") }, "\(result.notes)")
+
+        let destinations = try read(folder, "Shared/Utility/AppDestination.swift")
+        for line in ["case .auth, .profile, .wallet: false", "static var tabs: [AppDestination] { allCases.filter(\\.isTab) }",
+                     "case .profile, .wallet: true", "static let gate: AppDestination = .auth",
+                     "static func opensPastGate(_ destination: AppDestination?) -> Bool {", "return destination != gate", "case .wallet: Wallet()"] {
+            XCTAssertTrue(destinations.contains(line), line)
+        }
+        let center = try read(folder, "Services/LayoutService/LayoutService+Center.swift")
+        XCTAssertTrue(center.contains("destination = launch.flatMap { $0.isTab ? $0 : nil } ?? .seer"), "a plain launch, or the gate's name, opens on the default")
+        XCTAssertTrue(center.contains("sheet = launch.flatMap { $0.isSheet ? $0 : nil }"), "-destination wallet opens the default with Wallet up")
+        XCTAssertTrue(center.contains("@Store var state: State"), "with a default, nothing of where the app was is kept")
+        let service = try read(folder, "Services/LayoutService/LayoutService.swift")
+        XCTAssertTrue(service.contains("func present(_ destination: AppDestination) {\n        set(.sheet(destination))") && service.contains("func closeSheet() {"))
+        XCTAssertTrue(try read(folder, "Services/LayoutService/Reducers/LayoutService.Set.swift").contains("case sheet(AppDestination?)"))
+        XCTAssertTrue(try read(folder, "Services/LayoutService/Ops/LayoutOps.swift").contains("if destination.isSheet {\n                // A sheet goes up over the tab on screen"))
+        for platform in ["iOS", "macOS"] {
+            let view = try read(folder, "\(platform)/PlatformNavigationView.swift")
+            for line in ["List(AppDestination.tabs, selection: sidebarSelection)", ".sheet(item: layout.binding(\\.sheet) { .sheet($0) }) { destination in",
+                         "Button(\"Close\", systemImage: \"xmark\") { layout.closeSheet() }", ".presentationDetents([.large])"] {
+                XCTAssertTrue(view.contains(line), "\(platform): \(line)")
+            }
+        }
+        XCTAssertTrue(try read(folder, "iOS/PlatformNavigationView.swift").contains("ForEach(AppDestination.tabs) { destination in"))
+        let home = try read(folder, "Components/Home/Home+View.swift")
+        for line in ["case .ready:\n                AppGate()", "struct AppGate: View {", "@Relay var account: AccountService",
+                     "if AppDestination.opensPastGate(AppDestination.launchArgument) { return false }", "return account.state.session == nil",
+                     "AppDestination.gate.view", "opens past the gate"] {
+            XCTAssertTrue(home.contains(line), line)
+        }
+        let tests = try read(folder, "Tests/LayoutOpsTests.swift")
+        for test in ["aPlainLaunchOpensOnTheDefault", "aSheetGoesUpOverTheTabAndCloses", "aSheetIsNotATab", "aLaunchThatAsksForASheetOpensItOverTheDefaultTab",
+                     "theGateHoldsOnAPlainLaunchAndOnItsOwnName", "aLaunchThatNamesAnotherDestinationOpensPastTheGate", "theGateIsNeverGoneTo"] {
+            XCTAssertTrue(tests.contains("@Test func \(test)()"), test)
+        }
+        XCTAssertFalse(tests.contains("aDestinationTheAppNoLongerHasReadsAsTheFirst"), "with a default nothing is decoded")
+
+        // A page opens a sheet through the layout service, once the navigation is there.
+        try await Fixture.call(Fixture.seerWithWallet, in: folder)
+        XCTAssertTrue(try read(folder, "Components/Seer/Seer+Actions.swift").contains("layout.present(.wallet)"))
+
+        // Made again with no gate, nothing of the gate is left: it lives only in files navigation writes whole.
+        var plain = Fixture.seerNavigation
+        plain.gate = nil
+        plain.relays = nil
+        plain.destinations = plain.destinations?.filter { !$0.hasSuffix(" gate") }
+        try await Fixture.call(plain, in: folder)
+        XCTAssertFalse(try read(folder, "Components/Home/Home+View.swift").contains("AppGate"))
+        XCTAssertFalse(try read(folder, "Shared/Utility/AppDestination.swift").contains("opensPastGate"))
+    }
+
+    /// With sheets and no default, the tab on screen is still kept between launches, and one that is no longer a tab
+    /// reads as the first; a default alone changes only where a plain launch opens.
+    func testWithNoDefaultTheTabIsKeptAndADefaultAloneListsEveryDestination() async throws {
+        let folder = try await app()
+        var input = Fixture.navigation
+        input.destinations = [#"recipes: RecipeList "Recipes" book"#, #"search: RecipeSearch "Search" magnifyingglass"#, #"settings: Settings "Settings" gearshape sheet"#]
+        try await Fixture.call(input, in: folder)
+        let center = try read(folder, "Services/LayoutService/LayoutService+Center.swift")
+        XCTAssertTrue(center.contains("@Store(persist: \"persistence.Recipes.layout.0001\", autoSave: true, preload: true) var state: State"))
+        XCTAssertTrue(center.contains("stored.isTab {\n                    destination = stored"))
+        XCTAssertTrue(try read(folder, "Tests/LayoutOpsTests.swift").contains("aDestinationTheAppNoLongerHasReadsAsTheFirst"))
+        XCTAssertFalse(try read(folder, "Shared/Utility/AppDestination.swift").contains("gate"))
+
+        input.destinations = [#"recipes: RecipeList "Recipes" book"#, #"search: RecipeSearch "Search" magnifyingglass default"#]
+        try await Fixture.call(input, in: folder)
+        XCTAssertTrue(try read(folder, "Services/LayoutService/LayoutService+Center.swift").contains("destination = launch ?? .search"))
+        XCTAssertFalse(try read(folder, "Shared/Utility/AppDestination.swift").contains("isTab"))
+        XCTAssertTrue(try read(folder, "iOS/PlatformNavigationView.swift").contains("ForEach(AppDestination.allCases)"))
+    }
+
+    /// A gate is held by something real: each of the line and the condition without the other, a relay the project
+    /// does not have, two defaults, two gates, no tab, a state field the service lacks: refused with every reason, and
+    /// nothing written.
+    func testAGateIsRefusedWithEveryReason() async throws {
+        let folder = try Fixture.folder()
+        try await Fixture.call(Fixture.seerProject, in: folder)
+        try await Fixture.call(Fixture.account, in: folder)
+        try await Fixture.call(Fixture.signIn, in: folder)
+        for page in Fixture.seerPages { try await Fixture.call(page, in: folder) }
+        func refusal(_ input: GraniteAppAgent.Input) async -> String {
+            do {
+                try await Fixture.call(input, in: folder)
+                return ""
+            } catch { return "\(error)" }
+        }
+        var noLine = Fixture.seerNavigation
+        noLine.destinations = [#"library: Library "Library" books.vertical default"#, #"seer: Seer "Seer" sparkles default"#]
+        noLine.relays = ["account: AccountService", "keys: KeychainService"]
+        var text = await refusal(noLine)
+        for reason in ["no destination is marked `gate`", "`KeychainService` is not in the project", "`library` and `seer` are both marked `default`"] {
+            XCTAssertTrue(text.contains(reason), "\(reason) in \(text)")
+        }
+        var noCondition = Fixture.seerNavigation
+        noCondition.gate = nil
+        noCondition.destinations = (noCondition.destinations ?? []) + [#"welcome: Library "Welcome" hand.wave gate"#]
+        text = await refusal(noCondition)
+        for reason in ["`auth` is marked `gate`, and nothing holds it", "`auth` and `welcome` are both marked `gate`"] {
+            XCTAssertTrue(text.contains(reason), "\(reason) in \(text)")
+        }
+        var unseen = Fixture.seerNavigation
+        unseen.gate = "account.state.token == nil || session.isEmpty"
+        text = await refusal(unseen)
+        for reason in ["`account.state.token`, which AccountService's state does not have (it has `session`", "the gate reads `session`, which is not one of `relays`"] {
+            XCTAssertTrue(text.contains(reason), "\(reason) in \(text)")
+        }
+        var noRelay = Fixture.seerNavigation
+        noRelay.relays = nil
+        text = await refusal(noRelay)
+        XCTAssertTrue(text.contains("the gate reads `account`, which is not one of `relays`: name it there (`account: AccountService`)"), text)
+        var noTab = Fixture.seerNavigation
+        noTab.destinations = [#"auth: SignIn "Sign In" person gate"#, #"wallet: Wallet "Wallet" creditcard sheet"#]
+        text = await refusal(noTab)
+        XCTAssertTrue(text.contains("at least one is a tab"), text)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Shared/Utility/AppDestination.swift").path))
     }
 
     func testTheSplitStyleShowsADetailPaneAndWidensTheMacWindow() async throws {

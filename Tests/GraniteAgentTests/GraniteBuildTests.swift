@@ -4,8 +4,9 @@ import XCTest
 
 /// The output built and run as a person's app would be: a recipe app made call by call (a project, a kit, services
 /// with an expression and with a body from the model, every page layout, navigation and modals), its Loom layout
-/// checked, built and tested on macOS, built for the iOS simulator, its kit tested with SwiftPM; and a fresh Xcode
-/// project linked and built. Gated (`GRANITE_BUILD=1`): a build takes minutes and fetches Granite.
+/// checked, built and tested on macOS, built for the iOS simulator, its kit tested with SwiftPM; Seer's shell (a
+/// default tab, sheets and a sign-in gate) built and tested the same way; and a fresh Xcode project linked and built.
+/// Gated (`GRANITE_BUILD=1`): a build takes minutes and fetches Granite.
 final class GraniteBuildTests: XCTestCase {
     /// Where builds keep their packages between runs, under the process's temporary files.
     private let packages = FileManager.default.temporaryDirectory.appendingPathComponent("granite-agent-packages", isDirectory: true)
@@ -63,6 +64,35 @@ final class GraniteBuildTests: XCTestCase {
         if testRun?.totalFailureCount == 0 { [derived, folder.appendingPathComponent("kit-build")].forEach { try? FileManager.default.removeItem(at: $0) } }
     }
 
+    /// Seer's shell (2026-11-15): Sign In until there is a session, three tabs with the middle one where a plain launch
+    /// opens, two sheets over them and a page that puts one up; built and its tests run on macOS (the layout's default,
+    /// sheet and gate rules among them), built for the iOS simulator.
+    func testTheSeerShellBuildsOnBothPlatforms() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["GRANITE_BUILD"] == "1", "set GRANITE_BUILD=1 to build the output")
+        let folder = try Fixture.folder()
+        let app = folder.appendingPathComponent("Seer")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try await Fixture.call(Fixture.seerProject, in: app)
+        try await Fixture.call(Fixture.account, in: app)
+        try await Fixture.call(Fixture.signIn, in: app)
+        for page in Fixture.seerPages { try await Fixture.call(page, in: app) }
+        try await Fixture.call(Fixture.seerNavigation, in: app)
+        try await Fixture.call(Fixture.seerWithWallet, in: app)
+
+        let derived = folder.appendingPathComponent("DerivedData")
+        let mac = try xcodebuild(["-project", "Seer.xcodeproj", "-scheme", "Seer-macOS", "-destination", "platform=macOS", "CODE_SIGNING_ALLOWED=NO",
+                                  "-skip-testing:SeerUITests-macOS", "build", "test"], in: app, derived: derived, home: folder.appendingPathComponent("home"))
+        XCTAssertEqual(mac.status, 0, Shell.digest(mac.log))
+        XCTAssertTrue(mac.log.contains("** TEST SUCCEEDED **"), Shell.digest(mac.log))
+        for test in ["aPlainLaunchOpensOnTheDefault", "aLaunchThatAsksForASheetOpensItOverTheDefaultTab", "aLaunchThatNamesAnotherDestinationOpensPastTheGate"] {
+            XCTAssertTrue(mac.log.contains("Test \(test)() passed"), test)
+        }
+        XCTAssertFalse(mac.log.contains(": warning: "), "the app builds without a warning: \(mac.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")
+        let iOS = try xcodebuild(["-project", "Seer.xcodeproj", "-scheme", "Seer-iOS", "-destination", "generic/platform=iOS Simulator", "build", "build-for-testing"],
+                                 in: app, derived: derived)
+        XCTAssertEqual(iOS.status, 0, Shell.digest(iOS.log))
+        if testRun?.totalFailureCount == 0 { try? FileManager.default.removeItem(at: derived) }
+    }
 
     func testALinkedProjectBuildsOnBothPlatforms() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GRANITE_BUILD"] == "1", "set GRANITE_BUILD=1 to build the output")

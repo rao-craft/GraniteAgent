@@ -50,6 +50,21 @@ struct Code {
     /// Back a level, with no brace.
     mutating func dedent() { depth = max(0, depth - 1) }
 
+    /// A `///` comment at the current depth, its words wrapped at 120 columns.
+    mutating func doc(_ text: String, width: Int = 120) {
+        let room = max(40, width - depth * 4 - 4)
+        var line = ""
+        for word in text.split(separator: " ") {
+            if !line.isEmpty, line.count + 1 + word.count > room {
+                self.line("/// " + line)
+                line = String(word)
+            } else {
+                line += (line.isEmpty ? "" : " ") + word
+            }
+        }
+        if !line.isEmpty { self.line("/// " + line) }
+    }
+
     /// A `switch` whose cases sit at its own depth, as Swift writes them.
 
     mutating func switchOn(_ subject: String, _ body: (inout Code) -> Void) {

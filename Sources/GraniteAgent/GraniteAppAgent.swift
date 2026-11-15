@@ -31,7 +31,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         public var state: [String]?
         /// A service's work, one a line: `load(page Int) -> posts = API.posts(page: page)`.
         public var events: [String]?
-        /// The services a service's work or a page reads: `feed: FeedService`.
+        /// The services a service's work, a page or navigation's gate reads: `feed: FeedService`.
         public var relays: [String]?
         /// How a page draws what it shows.
         public var layout: GraniteLayout?
@@ -44,8 +44,10 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         /// A blank page's body as Swift, written as given (parse-checked) instead of asked of the host's model: the
         /// view the app already has, filled from the relays and actions.
         public var body: String?
-        /// The app's destinations: `feed: Feed "Feed" house`.
+        /// The app's destinations: `feed: Feed "Feed" house`, and after the symbol `default`, `sheet` or `gate`.
         public var destinations: [String]?
+        /// What holds navigation's gate, as a Swift condition over a relay's state: `account.state.session == nil`.
+        public var gate: String?
         /// How the app moves between its destinations.
         public var style: GraniteStyle?
         /// The root page; `Home` when left out.
@@ -66,18 +68,19 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         public init(make: GraniteMake, name: String? = nil, bundleId: String? = nil, team: String? = nil, type: String? = nil,
                     into: String? = nil, state: [String]? = nil, events: [String]? = nil, relays: [String]? = nil,
                     layout: GraniteLayout? = nil, shows: [String]? = nil, actions: [String]? = nil, views: [String]? = nil,
-                    body: String? = nil, destinations: [String]? = nil, style: GraniteStyle? = nil, root: String? = nil, packages: [String]? = nil,
-                    imports: [String]? = nil, persist: Bool? = nil, notes: String? = nil, rounds: Int? = nil, directory: String? = nil) {
+                    body: String? = nil, destinations: [String]? = nil, gate: String? = nil, style: GraniteStyle? = nil, root: String? = nil,
+                    packages: [String]? = nil, imports: [String]? = nil, persist: Bool? = nil, notes: String? = nil, rounds: Int? = nil,
+                    directory: String? = nil) {
             self.make = make; self.name = name; self.bundleId = bundleId; self.team = team; self.type = type; self.into = into
             self.state = state; self.events = events; self.relays = relays; self.layout = layout; self.shows = shows; self.body = body
-            self.actions = actions; self.views = views; self.destinations = destinations; self.style = style; self.root = root
+            self.actions = actions; self.views = views; self.destinations = destinations; self.gate = gate; self.style = style; self.root = root
             self.packages = packages; self.imports = imports; self.persist = persist; self.notes = notes; self.rounds = rounds
             self.directory = directory
         }
 
         private enum CodingKeys: String, CodingKey, CaseIterable {
             case make, name, bundleId, team, type, into, state, events, relays, layout, shows, actions, views, body, destinations
-            case style, root, packages, imports, persist, notes, rounds, directory
+            case gate, style, root, packages, imports, persist, notes, rounds, directory
         }
 
         /// Any key a call carries, to find the ones that are not fields.
@@ -92,7 +95,8 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         static let misnamed: [String: String] = [
             "endpoints": "events", "endpoint": "events", "reducers": "events", "work": "events", "methods": "events",
             "fields": "state", "properties": "state", "entities": "state",
-            "routes": "destinations", "tabs": "destinations", "subviews": "views", "rows": "shows", "items": "shows",
+            "routes": "destinations", "tabs": "destinations", "sheets": "destinations", "default": "destinations", "condition": "gate",
+            "subviews": "views", "rows": "shows", "items": "shows",
             "bundle": "bundleId", "bundleID": "bundleId", "folder": "into", "path": "into", "kind": "make",
         ]
 
@@ -127,6 +131,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
             views = try Self.lines(c, .views)
             body = try c.decodeIfPresent(String.self, forKey: .body)
             destinations = try Self.lines(c, .destinations)
+            gate = try c.decodeIfPresent(String.self, forKey: .gate)
             style = try c.decodeIfPresent(GraniteStyle.self, forKey: .style)
             root = try c.decodeIfPresent(String.self, forKey: .root)
             packages = try Self.lines(c, .packages)
@@ -178,12 +183,13 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         "into": "the folder, relative to the project; Services/<Type> or Components/<Type> when left out; a kit's folder (`Packages/RecipeKit`) puts a public service in the kit",
         "state": "fields, one a line, in the models syntax: `posts [Post] = []`, `selected String?`; a page's `let post Post` is an input it is made with",
         "events": "a service's work, one a line: `load(page Int) -> posts = API.posts(page: page) \"loads a page\"`; `+> posts` appends; with no `= call` the host's model writes the work",
-        "relays": "the services a service's work calls or a page reads: `feed: FeedService` or `Feed`",
+        "relays": "the services a service's work calls, a page reads, or navigation's `gate` reads: `feed: FeedService` or `Feed`",
         "layout": "how a page draws: list, grid, detail, form, settings, search, compose, tabs, threePane, blank",
         "shows": "what a page draws: `items = feed.state.posts`, `item = …`, `selection = feed.state.selected`, `title = \"Feed\"`, `empty = \"No posts yet\"`; a row of a form `\"Section/Label\" = config.state.field`",
         "actions": "what a page does: `refresh = try await feed.load(page: 1)`, `more = …`, `open(post Post) = …`, `compose \"New Post\" square.and.pencil = …`",
         "views": "a page's subviews: `row(post Post, vote (Bool) -> Void) \"title, author and score, with a vote\"`; a closure is an action the view sends up with `bubble`, routed by the page to the action of its name; a description is what the host's model writes the body from",
-        "destinations": "the app's places, one a line: `feed: Feed \"Feed\" house`; `| Detail` names the view beside it in the split style",
+        "destinations": "the app's places, one a line: `feed: Feed \"Feed\" house`; after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `gate` shows it instead of the tabs while `gate` holds; `| Detail` names the view beside it in the split style",
+        "gate": "navigation's gate: a Swift condition over a relay's state, the relay named in `relays` (`account.state.session == nil`, `account: AccountService`); while it holds, the destination marked `gate` is shown full screen instead of the tabs, and a launch with `-destination <another>` opens past it",
         "style": "how the app moves between destinations: adaptive (tabs on iPhone, a sidebar on iPad and Mac), tabs, sidebar, split",
         "root": "the root page; Home when left out",
         "packages": "remote packages the app links, pinned: `https://github.com/kean/Nuke@<40-hex revision> Nuke NukeUI`",
@@ -202,7 +208,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
 
         component: {"make": "component", "type": "RecipeList", "layout": "list", "relays": ["recipes: RecipesService"], "shows": ["items = recipes.state.recipes", "title = \"Recipes\"", "empty = \"No recipes yet\""], "actions": ["refresh = try await recipes.load(page: 1)", "more = try await recipes.more(page: 2)", "open(recipe Recipe) = recipes.set(.favorite(recipe.id))", "favor(recipe Recipe) \"Favorite\" star = try await recipes.favor(recipe: recipe)"], "views": ["row(recipe Recipe, favor () -> Void) \"photo, title and minutes, with a heart\""]} writes the page. Layouts: list, grid and search show `items` (search adds `query`); detail shows `item`; threePane shows `items` and `selection`, and a `sidebar`; form, settings and compose show rows `"Section/Label" = recipes.state.field` or `= state.field`, each a control by its type; tabs shows `"Title" = SomeView()` a tab; blank is written by the host's model: a page that shows a view the app already has (a kit's `FeedView(…)`) is `layout: blank` with its relays and actions, and either the body itself in `body` (written as given) or the view and how to fill it named in `notes`. Actions named refresh, more, open, submit and search do what they say; one that takes an item sits in its row's menu; the others are toolbar buttons (`name "Words" sf.symbol = statements`). A view's closure is an action it sends up with `bubble`; the page routes it, where it draws the view, to the action of its name. The page's own state is `state` lines (`query String = ""`); `let recipe Recipe` is an input it is made with.
 
-        navigation: {"make": "navigation", "destinations": ["recipes: RecipeList \"Recipes\" book", "search: RecipeSearch \"Search\" magnifyingglass", "settings: Settings \"Settings\" gearshape"], "style": "adaptive"} writes the destinations, tabs on iPhone and a sidebar on iPad and the Mac, a layout service, routes and Device, and shows them once the app is ready. The pages must exist first.
+        navigation: {"make": "navigation", "destinations": ["recipes: RecipeList \"Recipes\" book", "search: RecipeSearch \"Search\" magnifyingglass", "settings: Settings \"Settings\" gearshape"], "style": "adaptive"} writes the destinations, tabs on iPhone and a sidebar on iPad and the Mac, a layout service, routes and Device, and shows them once the app is ready. The pages must exist first. After a symbol, `default` opens the app on that destination, `sheet` puts it in a sheet over the tabs (a page opens it with `layout.present(.settings)`), and `gate` shows it instead of the tabs while the `gate` condition holds: `"gate": "account.state.session == nil"` with `"relays": ["account: AccountService"]`.
 
         modals: {"make": "modals"} writes ModalService and its host: `modals.sheet(id: "compose", detents: [.medium, .large]) { … }`, `modals.alert(…)`, `modals.toast("Saved", style: .success)`, `modals.travel(id: "draft", title: "Draft") { … }` (a panel that stays while you browse), and on the Mac `modals.window(id:title:size:) { … }`.
 

@@ -105,6 +105,29 @@ final class LineTests: XCTestCase {
         }
     }
 
+    /// After the symbol: `default` (the tab a plain launch opens on), `sheet` (over the tabs), `gate` (before them).
+    func testDestinationLinesSayWhereTheySit() throws {
+        let seer = try DestinationLine.parse(#"seer: Seer "Seer" sparkles default"#)
+        XCTAssertEqual(seer, Destination(name: "seer", view: "Seer()", viewType: "Seer", title: "Seer", symbol: "sparkles", detail: nil, detailType: nil,
+                                         place: .tab, isDefault: true))
+        XCTAssertEqual(try DestinationLine.parse(#"wallet: Wallet "Wallet" creditcard sheet"#).place, .sheet)
+        let auth = try DestinationLine.parse(#"auth: SignIn "Sign In" person gate"#)
+        XCTAssertEqual(auth.place, .gate)
+        XCTAssertEqual(auth.title, "Sign In")
+        XCTAssertFalse(auth.isDefault)
+        let inbox = try DestinationLine.parse(#"inbox: Inbox "Inbox" tray default | Message"#)
+        XCTAssertTrue(inbox.isDefault)
+        XCTAssertEqual(inbox.detail, "Message()")
+        XCTAssertEqual(try DestinationLine.parse(#"feed: Feed "Feed" house"#).place, .tab, "a line with no word is a tab, as before")
+        for (line, reason) in [(#"feed: Feed "Feed" house later"#, "comes `default`, `sheet` or `gate`, not `later`"),
+                               (#"feed: Feed "Feed" house sheet gate"#, "not both"),
+                               (#"feed: Feed "Feed" house sheet default"#, "a sheet is not a tab"),
+                               (#"feed: Feed "Feed" house gate default"#, "a gate is not a tab"),
+                               (#"feed: Feed "Feed" house default default"#, "`default` is said twice")] {
+            XCTAssertThrowsError(try DestinationLine.parse(line), line) { XCTAssertTrue("\($0)".contains(reason), "\(line) → \($0)") }
+        }
+    }
+
     func testPackageLines() throws {
         let revision = String(repeating: "a1", count: 20)
         let nuke = try PackageLine.parse("https://github.com/kean/Nuke@\(revision) Nuke NukeUI")
