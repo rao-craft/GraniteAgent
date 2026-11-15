@@ -116,7 +116,9 @@ public struct GraniteAppAgent: GraniteAgentPackage {
                 })
             }
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            make = try c.decode(GraniteMake.self, forKey: .make)
+            // `contains`, not `decodeIfPresent`: the schema a model is shown is read through this init, and its
+            // decoder holds every key, so `make` stays required there.
+            make = c.contains(.make) ? try c.decode(GraniteMake.self, forKey: .make) : try Self.make(by: Set(any.allKeys.map(\.stringValue)))
             name = try c.decodeIfPresent(String.self, forKey: .name)
             bundleId = try c.decodeIfPresent(String.self, forKey: .bundleId)
             team = try c.decodeIfPresent(String.self, forKey: .team)
@@ -140,6 +142,23 @@ public struct GraniteAppAgent: GraniteAgentPackage {
             notes = try c.decodeIfPresent(String.self, forKey: .notes)
             rounds = try c.decodeIfPresent(Int.self, forKey: .rounds)
             directory = try c.decodeIfPresent(String.self, forKey: .directory)
+        }
+
+        /// What a call with no `make` makes, read from the fields only that make takes; refused in words when they
+        /// do not say.
+        ///
+        /// PIN: A MISSING `make` IS READ FROM THE CALL (Seer R4, 2026-11-15). A local model writes a call's fields in the
+        /// order its spec lists them, alphabetically, and on every page it skipped `make`, which falls between `layout`
+        /// and `relays`. Told `DecodingError.keyNotFound`, it sent the same call six times until the repeat guard closed
+        /// the pages. The other fields already say it: only navigation has destinations, only a service has events,
+        /// only a page has a layout, shows, actions, views or a body.
+        static func make(by keys: Set<String>) throws -> GraniteMake {
+            if keys.contains("destinations") { return .navigation }
+            if keys.contains("events") { return .service }
+            if !keys.isDisjoint(with: ["layout", "shows", "actions", "views", "body"]) { return .component }
+            if !keys.isDisjoint(with: ["bundleId", "team"]) { return .project }
+            throw GraniteError.refused(["the call has no `make`: add what it makes, one of "
+                + GraniteMake.allCases.map { "`\($0.rawValue)`" }.joined(separator: ", ")])
         }
 
         /// A list of lines: an array, or one string holding a JSON array of strings.

@@ -257,6 +257,26 @@ final class ServiceTests: XCTestCase {
                        ["posts [Post] = []"], "one line is a list of one")
     }
 
+    /// PIN (Seer R4): a call with no `make` is read by the fields only one make takes; one they do not settle is
+    /// refused in words that say what to add, never as a decoding error.
+    func testACallWithNoMakeIsReadByItsFields() throws {
+        let rows: [(String, GraniteMake)] = [
+            (#"{"type":"SignIn","layout":"form","relays":["account: AccountService"],"shows":["title = \"Sign In\""]}"#, .component),
+            (#"{"type":"Settings","layout":"blank","notes":"three rows","relays":[]}"#, .component),
+            (#"{"type":"Feed","events":["load -> posts = API.posts()"],"state":["posts [Post] = []"]}"#, .service),
+            (#"{"style":"tabs","destinations":["feed: Feed \"Feed\" house"]}"#, .navigation),
+            (#"{"name":"Seer","bundleId":"app.seer.ios"}"#, .project),
+            (#"{"make":"package","name":"SeerKit","layout":"list"}"#, .package),
+        ]
+        for (json, make) in rows {
+            XCTAssertEqual(try JSONDecoder().decode(GraniteAppAgent.Input.self, from: Data(json.utf8)).make, make, json)
+        }
+        XCTAssertThrowsError(try JSONDecoder().decode(GraniteAppAgent.Input.self, from: Data(#"{"name":"Seer"}"#.utf8))) { error in
+            XCTAssertEqual("\(error)", "1 problem, so nothing was written:\n- the call has no `make`: add what it makes, one of "
+                + "`project`, `package`, `link`, `service`, `component`, `navigation`, `modals`")
+        }
+    }
+
     /// A call to a client the project does not declare is refused, pointing to the agents that make one (Margin).
     func testACallToAClientThatDoesNotExistIsRefused() async throws {
         let folder = try await app()
