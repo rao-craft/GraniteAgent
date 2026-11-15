@@ -225,6 +225,9 @@ final class ComponentTests: XCTestCase {
         XCTAssertEqual(model.asked.count, 2, "asked again once")
         let again = model.asked[1].user
         XCTAssertTrue(again.contains("`Spinner` is not a view SwiftUI or this app has") && again.contains("`refresh()` is not one of the page's actions (it has `load()`)"), again)
+        for legal in ["ToolbarItem", "ToolbarItemGroup", "Tab", "GlassEffectContainer", "TimelineView"] {
+            XCTAssertTrue(ComponentMake.knownTypes.contains(legal), "\(legal) is SwiftUI's")
+        }
         XCTAssertTrue(try read(folder, "Components/Kitchen/Kitchen+View.swift").contains("ProgressView()"))
     }
 
@@ -243,6 +246,20 @@ final class ComponentTests: XCTestCase {
             XCTAssertTrue(text.contains("to add `reload`, give it one first: `make: service`, `type: Recipes`, `events: [\"reload(…) -> … = …\"]`"), text)
             XCTAssertTrue(text.contains("`clear`: `recipes.favorite` is RecipesService's state: read it as `recipes.state.favorite`"), text)
         }
+    }
+
+    /// PIN (G-025): a field of an entity the service holds is read through that state field, never added as work.
+    func testAFieldOfWhatAServiceHoldsIsReadThroughItsState() {
+        var index = ProjectIndex()
+        var service = ProjectIndex.ServiceInfo(name: "AccountService", file: URL(fileURLWithPath: "/tmp/AccountService.swift"))
+        service.fields = [(name: "session", type: "Session?"), (name: "account", type: "Account?")]
+        service.entries = ["signIn", "loadAccount", "set", "binding"]
+        index.services["AccountService"] = service
+        var account = ProjectIndex.TypeInfo(name: "Account", kind: "struct", conformances: [])
+        account.fields = [(name: "id", type: "String"), (name: "name", type: "String"), (name: "email", type: "String")]
+        index.types["Account"] = account
+        let problems = ComponentMake.relayMisuse(in: "Text(account.name)", relays: [Relay(name: "account", type: "AccountService")], index: index)
+        XCTAssertEqual(problems, ["`account.name` is a field of AccountService's `account` (Account?): read it as `account.state.account?.name`"])
     }
 
     /// An action reaches only what the page can see: a bare call to a service's work, or a name no relay holds, is refused

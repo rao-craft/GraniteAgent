@@ -282,6 +282,10 @@ struct ComponentMake {
         "String", "Int", "Double", "Bool", "Date", "URL", "UUID", "Array", "Dictionary", "Set", "Optional", "Task", "Text.DateStyle",
         "Material", "ShapeStyle", "AnyShapeStyle", "RelativeDateTimeFormatter", "DateFormatter", "NumberFormatter", "Calendar",
         "On",
+        // Legal inside `.toolbar { }`, and the newer SwiftUI a page reaches for (Seer R3, 2026-11-15: a Void page with a
+        // leading `ToolbarItem` was refused as making a view SwiftUI does not have, three rounds over).
+        "ToolbarItem", "ToolbarItemGroup", "ToolbarSpacer", "Tab", "TabSection", "GlassEffectContainer", "Glass", "TimelineView",
+        "Canvas", "Path", "PhaseAnimator", "KeyframeAnimator", "LabeledContent", "DisclosureGroup", "ControlGroup",
     ]
 
     /// Names a body uses that neither SwiftUI nor the app has: a view it makes (`Spinner()`), or work it awaits that
@@ -289,6 +293,14 @@ struct ComponentMake {
     /// made a `Spinner` and awaited a `refresh` the page did not have, and did not build.
     /// Each `relay.member` in `text` that its service does not have: an entry it does not declare (`feed.load()` when
     /// FeedService has `loadFeed`), or its state read without `.state` (`feed.lastError`). Margin, 2026-11-01.
+    /// The service's state field whose type (one value, optional or not) has a field named `member`.
+    static func holder(of member: String, in service: ProjectIndex.ServiceInfo, index: ProjectIndex) -> (name: String, type: String)? {
+        service.fields.first { field in
+            let base = field.type.hasSuffix("?") ? String(field.type.dropLast()) : field.type
+            return index.types[base]?.fields.contains { $0.name == member } == true
+        }
+    }
+
     static func relayMisuse(in text: String, relays: [Relay], index: ProjectIndex) -> [String] {
         var problems: [String] = []
         for relay in relays {
@@ -298,6 +310,12 @@ struct ComponentMake {
             for member in text.matches(#"(?<![\w.])\#(relay.name)\.([A-Za-z_]\w*)"#) where !own.contains(member) && seen.insert(member).inserted {
                 if service.field(member) != nil {
                     problems.append("`\(relay.name).\(member)` is \(relay.type)'s state: read it as `\(relay.name).state.\(member)`")
+                } else if let holder = Self.holder(of: member, in: service, index: index) {
+                    // PIN: a field of what the service holds is read through that state. Told "AccountService has no
+                    // `name` … give it one first", the model tried to add `name` as work (Seer R3, 2026-11-15, G-025).
+                    let optional = holder.type.hasSuffix("?") ? "?" : ""
+                    problems.append("`\(relay.name).\(member)` is a field of \(relay.type)'s `\(holder.name)` (\(holder.type)): read it as "
+                                    + "`\(relay.name).state.\(holder.name)\(optional).\(member)`")
                 } else {
                     let entries = service.entries.filter { !["set", "binding"].contains($0) }
                     // PIN: say how to add it. Told only "FeedService has no `load`" of a service with no work at all, the

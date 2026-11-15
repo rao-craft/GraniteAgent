@@ -398,6 +398,14 @@ final class ServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Services/PantryService").path))
     }
 
+    /// PIN: a parse error is sent back with the line it points at, since the model never saw the file its body went into.
+    func testAParseErrorIsSentBackWithTheLineItPointsAt() {
+        let source = "struct V: View {\n    var body: some View {\n        Button { go() } {\n            Text(\"Go\")\n        }\n    }\n}"
+        let failure = "Body.swift:3:25: error: consecutive statements on a line must be separated by ';'"
+        XCTAssertEqual(BodyAsk.quoted(failure, in: source), failure + " — at the line `Button { go() } {`")
+        XCTAssertEqual(BodyAsk.quoted("Body.swift:99:1: error: x", in: source), "Body.swift:99:1: error: x", "a line past the end stays as it is")
+    }
+
     func testAServiceInAKitIsPublicAndItsRootHoldsIt() async throws {
         let folder = try await app()
         try await Fixture.call(Fixture.kit, in: folder)

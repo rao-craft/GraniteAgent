@@ -46,6 +46,59 @@ result deterministically; whether Craft's model writes this call is tested by th
 - a tab bar on iPhone, a sidebar on iPad and the Mac; `-destination feed` opens the Feed
 - macOS build: BUILD SUCCEEDED
 
+## Conformance on Seer
+
+A from-scratch iPhone app like Seer, made by 24 calls to seven agents (`$granite`, `$design`, `$assets`,
+`$network`, `$mocks`, `$tests`, `$screenshots`), each sent straight to the installed runners over the wire with no
+model, in an empty folder; the calls are the ones Craft's one-shot Seer prompt spells out.
+
+### Seer's navigation: a gate, a default tab, sheets
+
+*2026-11-15 · straight to the runner, no model*
+
+**The calls**: a first navigation with one sheet, so the pages after it can open sheets with `layout.present`:
+
+```json
+{
+  "make": "navigation",
+  "style": "tabs",
+  "destinations": [
+    "library: Library \"Library\" books.vertical.fill",
+    "wallet: WalletPage \"Wallet\" creditcard sheet"
+  ]
+}
+```
+
+then, once Seer, Models, Profile and The World are made with `layout.present(.world)`, `.profile`, `.wallet`,
+`.settings` and `.looms` among their actions, the navigation again with every page:
+
+```json
+{
+  "make": "navigation",
+  "style": "tabs",
+  "destinations": [
+    "auth: SignIn \"Sign In\" person gate",
+    "library: Library \"Library\" books.vertical.fill",
+    "seer: Seer \"Seer\" sparkles default",
+    "models: Models \"Models\" square.stack.3d.up",
+    "profile: Profile \"Profile\" person.crop.circle sheet",
+    "settings: Settings \"Settings\" gearshape sheet",
+    "wallet: WalletPage \"Wallet\" creditcard sheet",
+    "world: WorldPage \"The World\" infinity sheet",
+    "looms: Looms \"Looms\" circle.hexagongrid sheet"
+  ],
+  "gate": "account.state.session == nil",
+  "relays": [
+    "account: AccountService"
+  ]
+}
+```
+
+**Checks**:
+- all 24 calls accepted; a page that names `layout.present` before any navigation has a sheet is refused with the
+  reason (`LayoutService has no present`), as it should be
+- iOS simulator build of the Seer-iOS scheme: BUILD SUCCEEDED
+
 ## Combinations
 
 Level 3 of the regime (`TESTING-REGIME.md`): one prompt a turn chaining agents, run through Craft on a local model,

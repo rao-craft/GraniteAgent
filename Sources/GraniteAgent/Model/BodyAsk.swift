@@ -81,7 +81,7 @@ struct BodyAsk: Sendable {
         return lines.map { $0.count >= shared ? String($0.dropFirst(shared)) : $0 }.joined(separator: "\n")
     }
 
-    /// The parser's complaint about `source`, or nil when it parses.
+    /// The parser's complaint about `source`, each error with the line it points at, or nil when it parses.
     static func parse(_ source: String) -> String? {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("granite-body-\(UUID().uuidString.prefix(8))", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -89,10 +89,27 @@ struct BodyAsk: Sendable {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try Data(source.utf8).write(to: file)
-            return try SwiftParse.check([file])?.replacingOccurrences(of: file.path, with: "Body.swift")
+            guard let failure = try SwiftParse.check([file])?.replacingOccurrences(of: file.path, with: "Body.swift") else { return nil }
+            return quoted(failure, in: source)
         } catch {
             return nil
         }
+    }
+
+    /// Each `Body.swift:<line>:<column>: error:` line of `failure`, followed by the line of `source` it points at.
+    ///
+    /// PIN: THE MODEL NEVER SAW THE FILE (Seer R3, 2026-11-15). The body is put inside a file the package writes, so
+    /// "Body.swift:46:18" names a line the model cannot count to. Told only that, it wrote the same body three rounds
+    /// running (`Button { … } { … }`, byte for byte, at its low temperature) and the page was refused. The line itself
+    /// is what it can find in its answer.
+    static func quoted(_ failure: String, in source: String) -> String {
+        let lines = source.components(separatedBy: "\n")
+        return failure.components(separatedBy: "\n").map { row in
+            let parts = row.split(separator: ":", maxSplits: 3, omittingEmptySubsequences: false)
+            guard row.hasPrefix("Body.swift:"), parts.count == 4, let number = Int(parts[1]), (1...lines.count).contains(number) else { return row }
+            let code = lines[number - 1].trimmingCharacters(in: .whitespaces)
+            return code.isEmpty ? row : row + " — at the line `\(code)`"
+        }.joined(separator: "\n")
     }
 
     /// `text` indented by `spaces` on every line that has something on it.
