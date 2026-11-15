@@ -19,7 +19,7 @@
       "type" : "string"
     },
     "destinations" : {
-      "description" : "the app's places, one a line: `feed: Feed \"Feed\" house`; `| Detail` names the view beside it in the split style",
+      "description" : "the app's places, one a line: `feed: Feed \"Feed\" house`; after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `gate` shows it instead of the tabs while `gate` holds; `| Detail` names the view beside it in the split style",
       "items" : {
         "type" : "string"
       },
@@ -31,6 +31,10 @@
         "type" : "string"
       },
       "type" : "array"
+    },
+    "gate" : {
+      "description" : "navigation's gate: a Swift condition over a relay's state, the relay named in `relays` (`account.state.session == nil`, `account: AccountService`); while it holds, the destination marked `gate` is shown full screen instead of the tabs, and a launch with `-destination <another>` opens past it",
+      "type" : "string"
     },
     "imports" : {
       "description" : "modules the files import beside Foundation, SwiftUI and Granite; a local package's are found on their own",
@@ -92,7 +96,7 @@
       "type" : "boolean"
     },
     "relays" : {
-      "description" : "the services a service's work calls or a page reads: `feed: FeedService` or `Feed`",
+      "description" : "the services a service's work calls, a page reads, or navigation's `gate` reads: `feed: FeedService` or `Feed`",
       "items" : {
         "type" : "string"
       },

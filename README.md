@@ -12,6 +12,7 @@ $granite start a recipe app
 $granite a service that keeps the recipes, loaded a page at a time and kept between launches
 $granite a list page of the recipes with pull to refresh and a favourite in each row's menu
 $granite navigation with Recipes, Search and Settings
+$granite navigation with Library, Seer and Models as tabs, opening on Seer, Wallet as a sheet, behind Sign In
 ```
 
 Ask for one piece or a whole app in a request. Craft runs the steps one at a time and shows each on its agent map.
@@ -25,8 +26,8 @@ Ask for one piece or a whole app in a request. Craft runs the steps one at a tim
 - **The pages people expect.** Lists, grids, details, forms, settings, search, compose, tabs and three-pane layouts,
   each with loading, empty and error states, pull to refresh, loading more, and the actions you named in menus,
   swipes and toolbars.
-- **Navigation and modals.** Your destinations laid out for each device, and one place for the app's sheets, alerts,
-  toasts and panels.
+- **Navigation and modals.** Your destinations laid out for each device, the tab it opens on, places that slide up
+  as sheets, a sign-in gate before them, and one place for the app's sheets, alerts, toasts and panels.
 - **Granite in an app you already have.** Point it at an existing Xcode project and it links Granite and adds the
   root and settings around the app's own code, without rewriting your views.
 

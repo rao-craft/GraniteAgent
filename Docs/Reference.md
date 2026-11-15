@@ -37,10 +37,11 @@ the root that holds the relays.
 | `into` | optional | the folder, relative to the project; `Services/<Type>` and `Components/<Type>` when left out; a kit's folder puts a public service in the kit |
 | `state` | service, component | fields in the models syntax, one a line: `posts [Post] = []`, `selected String?`; a page's `let post Post` is an input |
 | `events` | service | the work, one a line (below) |
-| `relays` | service, component | `feed: FeedService`, or `Feed` |
+| `relays` | service, component, navigation | `feed: FeedService`, or `Feed`; navigation reads them only for its `gate` |
 | `layout` | component | `list`, `grid`, `detail`, `form`, `settings`, `search`, `compose`, `tabs`, `threePane`, `blank` |
 | `shows`, `actions`, `views` | component | what the page draws, does, and its subviews (below) |
-| `destinations`, `style` | navigation | `feed: Feed "Feed" house`; `adaptive`, `tabs`, `sidebar` or `split` |
+| `destinations`, `style` | navigation | `feed: Feed "Feed" house`, then `default`, `sheet` or `gate` when it is more than a tab (below); `adaptive`, `tabs`, `sidebar` or `split` |
+| `gate` | navigation | the condition over a relay's state that holds the gate: `account.state.session == nil`, its relay in `relays` |
 | `root` | project, link, navigation | the root page; `Home` when left out |
 | `packages` | project, package, link | pinned remote packages: `https://github.com/kean/Nuke@<revision> Nuke NukeUI` |
 | `imports` | service, component | modules to import; a local package's are found on their own |
@@ -65,7 +66,14 @@ refresh = try await feed.load(page: 1)    actions: refresh, more, open, submit a
 favor(post Post) "Favorite" star = …       an action on an item is in its row's menu and swipe; others are toolbar buttons
 row(post Post, vote (Bool) -> Void) "title, author and score, with a vote"     views: a closure is an action the view bubbles up, routed to the action of its name
 feed: Feed "Feed" house | PostDetail       destinations: the detail after a bar shows beside it in the split style
+seer: Seer "Seer" sparkles default         default: a plain launch opens on it, not the first, every time
+wallet: Wallet "Wallet" creditcard sheet   sheet: over the tabs, not one of them; a page opens it with layout.present(.wallet)
+auth: SignIn "Sign In" person gate         gate: shown instead of the tabs while `gate` holds (one, with `gate`)
 ```
+
+Every destination opens from a launch with `-destination <name>`: a tab on it, a sheet up over the default tab. With
+a gate, a launch with no `-destination`, or with the gate's own name, holds by the condition; one naming any other
+destination opens past it, so a screen is checked with no sign-in and no tap.
 
 A line it cannot read, a field that does not exist, a relay that would loop, a page the project does not have: the call
 is refused with every reason at once, and nothing is written.
@@ -77,7 +85,7 @@ is refused with every reason at once, and nothing is written.
 | project | `<Name>.xcodeproj` from Granite's template (objectVersion 77, synchronized Shared, Components, Services, iOS, macOS, Tests and UITests; an app, unit tests and UI tests per platform, the UI tests skipped in the schemes until turned on, since they need an interactive session to drive the app; Swift 5, iOS 17, macOS 14; Granite pinned at `7ff33526` with GraniteAgents), shared schemes, `@main` App and delegate, `AppCommands`, `AppRoot`, `EnvironmentService` and `ConfigService` with their Ops and tests, the `Home` page that boots the app, `modalHosted()`, the asset catalog |
 | service | the struct with its tickets, lane, `set` and `binding` helpers and a ticketed entry per event; its center (`TransientState`, or a persisted `GraniteState` that reads old files); `Set` with a case per field; a reducer per event that marks the start in `reduce` and works in `effect`; `Ops.apply`; Ops tests; a relay in the root |
 | component | `<Page>`, `+Center`, `+View` (loading, empty, an error banner with a retry, pull to refresh, load more, a context menu and swipe per item, a toolbar, the first load gated on `isLoaded`), `+Actions`, reducers when asked, and `Views/<Page>.<Role>View.swift` per subview |
-| navigation | `AppDestination`, `PlatformNavigationView` for iOS and macOS, `LayoutService`, `Routes` over Granite's router, `Device`, and the root page shown with them |
+| navigation | `AppDestination`, `PlatformNavigationView` for iOS and macOS, `LayoutService`, `Routes` over Granite's router, `Device`, and the root page shown with them; with `sheet`, `AppDestination.tabs` and `isSheet`, a `sheet` in the layout with `present` and `closeSheet`, and the sheet host on both platforms; with `gate`, `AppGate` in the root page's view file, beside the root that shows it; `LayoutOpsTests` cover the default, a sheet and the gate's launch rule |
 | modals | `ModalService` (sheets with detents, alerts, toasts, travelling panels, Mac windows; state holds ids, a registry the views), its host views, and the real `modalHosted()` |
 | package | `Package.swift`, `<Name>Root`, a test target; inside an app, `Packages/<Name>` linked into every app target |
 | link | Granite linked into every app target, Swift 5 on app targets that were on 6, the root, the boot and settings services and a root page written beside the app's code (file references and build files in a project of classic groups), and the root page mounted around the view the App showed |
@@ -108,5 +116,6 @@ need an interactive session to drive the app.
 ```
 swift test                     # the record, the schema, the lines, every make's files, the project file's edits
 GRANITE_BUILD=1 swift test     # a recipe app made call by call, built and tested on macOS, built for the iOS
-                               # simulator, its kit tested; a fresh Xcode project linked, built and tested
+                               # simulator, its kit tested; Seer's shell (a default tab, two sheets, a sign-in
+                               # gate) the same; a fresh Xcode project linked, built and tested
 ```

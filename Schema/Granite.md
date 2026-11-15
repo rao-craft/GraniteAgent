@@ -24,13 +24,14 @@ granite's own log.
 | `into` | no | the folder, relative to the project; Services/<Type> or Components/<Type> when left out; a kit's folder (`Packages/RecipeKit`) puts a public service in the kit |
 | `state` | no | fields, one a line, in the models syntax: `posts [Post] = []`, `selected String?`; a page's `let post Post` is an input it is made with |
 | `events` | no | a service's work, one a line: `load(page Int) -> posts = API.posts(page: page) "loads a page"`; `+> posts` appends; with no `= call` the host's model writes the work |
-| `relays` | no | the services a service's work calls or a page reads: `feed: FeedService` or `Feed` |
+| `relays` | no | the services a service's work calls, a page reads, or navigation's `gate` reads: `feed: FeedService` or `Feed` |
 | `layout` | no | how a page draws: list, grid, detail, form, settings, search, compose, tabs, threePane, blank |
 | `shows` | no | what a page draws: `items = feed.state.posts`, `item = …`, `selection = feed.state.selected`, `title = "Feed"`, `empty = "No posts yet"`; a row of a form `"Section/Label" = config.state.field` |
 | `actions` | no | what a page does: `refresh = try await feed.load(page: 1)`, `more = …`, `open(post Post) = …`, `compose "New Post" square.and.pencil = …` |
 | `views` | no | a page's subviews: `row(post Post, vote (Bool) -> Void) "title, author and score, with a vote"`; a closure is an action the view sends up with `bubble`, routed by the page to the action of its name; a description is what the host's model writes the body from |
 | `body` | no | a blank page's body as Swift, written as given: the view the app has, filled from the page's relays and actions (`FeedView(posts: feed.state.posts, actions: …)`) |
-| `destinations` | no | the app's places, one a line: `feed: Feed "Feed" house`; `\| Detail` names the view beside it in the split style |
+| `destinations` | no | the app's places, one a line: `feed: Feed "Feed" house`; after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `gate` shows it instead of the tabs while `gate` holds; `\| Detail` names the view beside it in the split style |
+| `gate` | no | navigation's gate: a Swift condition over a relay's state, the relay named in `relays` (`account.state.session == nil`, `account: AccountService`); while it holds, the destination marked `gate` is shown full screen instead of the tabs, and a launch with `-destination <another>` opens past it |
 | `style` | no | how the app moves between destinations: adaptive (tabs on iPhone, a sidebar on iPad and Mac), tabs, sidebar, split |
 | `root` | no | the root page; Home when left out |
 | `packages` | no | remote packages the app links, pinned: `https://github.com/kean/Nuke@<40-hex revision> Nuke NukeUI` |
@@ -68,6 +69,20 @@ With an `AgentRefusal`: a kind and reasons, each with its fix. `input` and `call
 
 Each change made to make this agent more precise, dated, with the regime run that measured it and what it
 made of what it was asked before and after (`TESTING.md`). Newest first.
+
+### 2026-11-15 · navigation: a default tab, sheets over the tabs, a gate before them
+
+Seer's shell is Sign In until there is a session, then three tabs with the middle one first, and its other places
+sheets over the tabs, each reachable from `-destination <name>`. Navigation made every destination a tab, always
+opened on the first and had no gate. A destination line may now end in `default` (a plain launch opens on it, every
+time), `sheet` (an `AppDestination` case presented at the large detent with a close button, `layout.present(.wallet)`,
+and `-destination wallet` opens the default tab with it up) or `gate` (shown full screen instead of the tabs while
+the new `gate` input, a condition over a relay's state, holds; a launch naming any other destination opens past it,
+for checking screens). Two defaults, two gates, no tab left, a gate line or condition without the other, and a relay
+or state field the project lacks are refused with every reason. A call with none of the words writes what it wrote
+before, byte for byte.
+
+Measured: not yet. The Seer measure (Craft) is the first.
 
 ### 2026-11-05 · a subview's actions bubble up to its page
 
