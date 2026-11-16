@@ -266,6 +266,73 @@ final class AppTests: XCTestCase {
         }
     }
 
+    /// A page that draws its own close and aliases that name a height (Seer's floor, 2026-11-15): `bare` keeps the page in
+    /// its stack and adds no close button for it, in both hosts on both platforms, a swipe still closing it; an alias's
+    /// height puts its sheet up at it on a launch, once, with each sheet under it that rests there too; a height on an
+    /// alias to a tab or the gate, to a sheet with no heights, or one its sheet does not rest at is refused.
+    func testABareSheetAddsNoCloseAndAnAliasNamesTheHeightItsSheetOpensAt() async throws {
+        let folder = try Fixture.folder()
+        try await Fixture.call(Fixture.seerProject, in: folder)
+        try await Fixture.call(Fixture.account, in: folder)
+        try await Fixture.call(Fixture.signIn, in: folder)
+        for page in Fixture.seerPages + [Fixture.seerSettings] { try await Fixture.call(page, in: folder) }
+        let result = try await Fixture.call(Fixture.seerSheets, in: folder)
+        for note in ["`wallet` draws its own close (`bare`): its sheet adds no close button, and a swipe down still closes it",
+                     "alias heights: `-destination wallet.full` puts `wallet` up at large; `-destination profile.full` puts `wallet` and `profile` up at large, once"] {
+            XCTAssertTrue(result.notes.contains { $0.contains(note) }, "\(note) in \(result.notes)")
+        }
+        let destinations = try read(folder, "Shared/Utility/AppDestination.swift")
+        for line in ["    static let aliasDetents: [String: [AppDestination: PresentationDetent]] = [\n        \"wallet.full\": [.wallet: .large],\n"
+                        + "        \"profile.full\": [.wallet: .large, .profile: .large],\n    ]\n",
+                     "@MainActor static func launchDetent(for destination: AppDestination) -> PresentationDetent? {",
+                     "let detent = aliasDetents[name]?[destination],\n              launchDetentsGiven.insert(destination).inserted else { return nil }",
+                     "@MainActor private static var launchDetentsGiven: Swift.Set<AppDestination> = []",
+                     "    var closesItself: Bool {\n        switch self {\n        case .wallet: true\n        default: false\n        }\n    }\n"] {
+            XCTAssertTrue(destinations.contains(line), line)
+        }
+        for platform in ["iOS", "macOS"] {
+            let view = try read(folder, "\(platform)/PlatformNavigationView.swift")
+            for line in [".toolbar {\n                            if !destination.closesItself {\n                                ToolbarItem(placement: .cancellationAction) {",
+                         "_detent = State(initialValue: AppDestination.launchDetent(for: destination) ?? destination.detents.first ?? .large)"] {
+                XCTAssertTrue(view.contains(line), "\(platform): \(line)")
+            }
+        }
+        let tests = try read(folder, "Tests/LayoutOpsTests.swift")
+        for line in ["@Test func anAliasPutsItsSheetUpAtTheHeightItNames() {",
+                     "#expect(AppDestination.aliasDetents[\"profile.full\"] == [.wallet: .large, .profile: .large], \"-destination profile.full\")",
+                     "@Test func aSheetWhosePageDrawsItsOwnCloseGetsNoCloseButton() {", "#expect(AppDestination.wallet.closesItself)",
+                     "#expect(!AppDestination.profile.closesItself, \"a sheet whose line does not say bare gets the close button\")"] {
+            XCTAssertTrue(tests.contains(line), line)
+        }
+
+        // A bare sheet in the plain host, its sheets not stacked.
+        var plain = Fixture.seerNavigation
+        plain.destinations = plain.destinations?.map { $0.hasPrefix("wallet:") ? $0 + " bare" : $0 }
+        try await Fixture.call(plain, in: folder)
+        for platform in ["iOS", "macOS"] {
+            let view = try read(folder, "\(platform)/PlatformNavigationView.swift")
+            XCTAssertTrue(view.contains(".toolbar {\n                        if !destination.closesItself {\n                            ToolbarItem(placement: .cancellationAction) {"), platform)
+            XCTAssertFalse(view.contains("LayoutSheetDetents") || view.contains("LayoutSheetHost"), platform)
+        }
+
+        func refusal(_ lines: [String]) async -> String {
+            var input = Fixture.seerSheets
+            input.destinations = Array(input.destinations!.prefix(7)) + lines
+            do {
+                try await Fixture.call(input, in: folder)
+                return ""
+            } catch { return "\(error)" }
+        }
+        let text = await refusal(["library.top -> library large", "auth.big -> auth large", "settings.full -> settings large", "wallet.tall -> wallet fraction(0.9)",
+                                  "wallet.again -> wallet.tall"])
+        for reason in ["`library.top` opens `library` at large, and `library` is a tab: a height is a sheet's",
+                       "`auth.big` opens `auth` at large, and `auth` is the gate", "`settings.full` opens `settings` at large, and `settings` names no `detents`",
+                       "`wallet.tall` opens `wallet` at fraction(0.9), a height `wallet` does not rest at (it rests at medium, large)",
+                       "`wallet.again` opens `wallet` at fraction(0.9)"] {
+            XCTAssertTrue(text.contains(reason), "\(reason) in \(text)")
+        }
+    }
+
     /// With sheets and no default, the tab on screen is still kept between launches, and one that is no longer a tab
     /// reads as the first; a default alone changes only where a plain launch opens.
     func testWithNoDefaultTheTabIsKeptAndADefaultAloneListsEveryDestination() async throws {

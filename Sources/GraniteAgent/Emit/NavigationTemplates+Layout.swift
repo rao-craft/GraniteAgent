@@ -550,6 +550,8 @@ extension NavigationTemplates {
             }
         }
         if shape.hasDetents { detentTests(&code, shape: shape) }
+        if shape.hasAliasDetents { aliasDetentTests(&code, shape: shape) }
+        if shape.hasBare { bareTests(&code, shape: shape) }
         if let gate = shape.gate {
             code.line()
             code.scope("@Test func theGateHoldsOnAPlainLaunchAndOnItsOwnName() {") { code in
@@ -657,6 +659,35 @@ extension NavigationTemplates {
             if let large = shape.sheets.first(where: { shape.detents[$0] == nil }) {
                 code.line("#expect(AppDestination.\(large).detents == [.large], \"a sheet whose line names none goes up large\")")
                 code.line("#expect(AppDestination.\(large).dragIndicator == .automatic)")
+            }
+        }
+    }
+
+    /// Each alias that names a height puts its sheets up at it, a height each of them rests at, and its own sheet among
+    /// them; the launch takes it once, so the sheets go up at their first after.
+    private static func aliasDetentTests(_ code: inout Code, shape: Shape) {
+        code.line()
+        code.scope("@Test func anAliasPutsItsSheetUpAtTheHeightItNames() {") { code in
+            for alias in shape.aliasDetents {
+                code.line("#expect(AppDestination.aliasDetents[\"\(alias.name)\"] == [" + alias.sheets.map { ".\($0): \(alias.detent.swift)" }.joined(separator: ", ")
+                          + "], \"-destination \(alias.name)\")")
+            }
+            code.scope("for (name, heights) in AppDestination.aliasDetents {") { code in
+                code.line("#expect(AppDestination(launchName: name).map { heights[$0] != nil } == true, \"-destination \\(name) puts its own sheet up at the height\")")
+                code.scope("for (sheet, detent) in heights {") { code in
+                    code.line("#expect(sheet.detents.contains(detent), \"-destination \\(name): a height .\\(sheet) rests at\")")
+                }
+            }
+        }
+    }
+
+    /// A sheet whose line says `bare` draws its own close, so the sheet adds none; any other gets the close button.
+    private static func bareTests(_ code: inout Code, shape: Shape) {
+        code.line()
+        code.scope("@Test func aSheetWhosePageDrawsItsOwnCloseGetsNoCloseButton() {") { code in
+            for sheet in shape.bare { code.line("#expect(AppDestination.\(sheet).closesItself)") }
+            if let closed = shape.sheets.first(where: { !shape.bare.contains($0) }) {
+                code.line("#expect(!AppDestination.\(closed).closesItself, \"a sheet whose line does not say bare gets the close button\")")
             }
         }
     }

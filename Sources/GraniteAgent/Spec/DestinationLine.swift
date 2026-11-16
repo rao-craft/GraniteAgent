@@ -8,23 +8,26 @@
 //            wallet: Wallet "Wallet" creditcard sheet
 //            profile: Profile "Profile" person.crop.circle sheet over models
 //            world: World "The World" infinity sheet over seer detents medium large
+//            wallet: Wallet "Wallet" wallet.bifold sheet over models bare
 //            auth: SignIn "Sign In" person gate
 //            auth.signup -> auth
+//            world.full -> world large
 //
 //        The case, the view (a component, with arguments when it takes any), the title in quotes, its SF Symbol (or in
 //        its place a view the app has, in UpperCamelCase, drawn once as the tab's image in its own colours), a
 //        word for where it sits when it is not just a tab (`default` the tab a plain launch opens on, `sheet` a sheet
 //        over the tabs, `gate` the page shown instead of them while the call's `gate` holds), for a sheet `over` and
-//        what a launch that names it puts up under it (a tab or another sheet) and `detents` and the heights it rests
-//        at (`medium`, `large`, `fraction(0.6)`, `height(320)`, the first where it goes up), and after a bar the view
-//        the detail pane shows beside it in the split style. A line `name -> destination` is a launch alias: another
-//        name a launch may give for a destination, dots allowed.
+//        what a launch that names it puts up under it (a tab or another sheet), `detents` and the heights it rests
+//        at (`medium`, `large`, `fraction(0.6)`, `height(320)`, the first where it goes up) and `bare` for a page that
+//        draws its own close, and after a bar the view the detail pane shows beside it in the split style. A line
+//        `name -> destination` is a launch alias: another name a launch may give for a destination, dots allowed,
+//        and after the destination a height its sheet lists, which a launch with the alias puts it up at.
 
 import Foundation
 
 enum DestinationLine {
     /// The words that may follow a destination's symbol.
-    static let marks = ["default", "sheet", "gate"]
+    static let marks = ["default", "sheet", "gate", "bare"]
 
     static func parse(_ line: String) throws -> Destination {
         let text = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -73,14 +76,16 @@ enum DestinationLine {
             over = target
         }
         let detents = try Self.detents(&words, in: line)
+        var isBare = false
         for word in words {
             guard marks.contains(word) else {
-                throw GraniteError.line(line, "after the SF Symbol comes `default`, `sheet` or `gate`, not `\(word)`")
+                throw GraniteError.line(line, "after the SF Symbol comes `default`, `sheet` or `gate`, not `\(word)` (a sheet may also say `over`, `detents` and `bare`)")
             }
             guard words.filter({ $0 == word }).count == 1 else { throw GraniteError.line(line, "`\(word)` is said twice") }
             switch word {
             case "default": isDefault = true
             case "sheet": place = .sheet
+            case "bare": isBare = true
             default: place = .gate
             }
         }
@@ -97,10 +102,13 @@ enum DestinationLine {
             let said = detents.map(\.word).joined(separator: " ")
             throw GraniteError.line(line, "`detents \(said)` names the heights a sheet rests at, and a \(place.rawValue) is not a sheet: say `sheet detents \(said)`")
         }
+        if isBare, place != .sheet {
+            throw GraniteError.line(line, "`bare` says a sheet's page draws its own close, so the sheet adds none, and a \(place.rawValue) is not a sheet: say `sheet bare`")
+        }
         var detailText: String?, detailType: String?
         if let detail { (detailText, detailType) = try viewCall(detail, in: line) }
         return Destination(name: name, view: viewText, viewType: viewType, title: title, symbol: symbol, detail: detailText, detailType: detailType,
-                           place: place, isDefault: isDefault, over: over, drawn: drawn, drawnType: drawnType, detents: detents)
+                           place: place, isDefault: isDefault, over: over, drawn: drawn, drawnType: drawnType, detents: detents, isBare: isBare)
     }
 
     /// The heights after `detents`, read out of `words` up to the next word that says where the destination sits: each
@@ -161,14 +169,16 @@ enum DestinationLine {
         return nil
     }
 
-    /// A line `name -> destination`: another name a launch may give for a destination; nil when the line is a
-    /// destination (its name comes before a colon, and an arrow after it belongs to its view).
+    /// A line `name -> destination`: another name a launch may give for a destination, and after it the height the
+    /// launch puts its sheet up at (`world.full -> world large`); nil when the line is a destination (its name comes
+    /// before a colon, and an arrow after it belongs to its view).
     static func alias(_ line: String) throws -> LaunchAlias? {
         let text = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let arrow = text.range(of: "->") else { return nil }
         let name = text[..<arrow.lowerBound].trimmingCharacters(in: .whitespaces)
         guard !name.contains(":"), !name.contains("\"") else { return nil }
-        let target = text[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
+        var words = text[arrow.upperBound...].split(whereSeparator: \.isWhitespace).map(String.init)
+        let target = words.isEmpty ? "" : words.removeFirst()
         let example = "a launch alias is `name -> destination`, like `auth.signup -> auth`"
         guard LaunchAlias.isName(name) else {
             throw GraniteError.line(line, name.isEmpty ? example : "`\(name)` is not a name a launch gives: letters, digits and `_`, in parts joined by `.` or `-`, like `auth.signup`")
@@ -176,7 +186,15 @@ enum DestinationLine {
         guard LaunchAlias.isName(target) else {
             throw GraniteError.line(line, target.isEmpty ? example : "`\(target)` is not a destination's name: \(example)")
         }
-        return LaunchAlias(name: name, target: target)
+        guard words.count <= 1 else {
+            throw GraniteError.line(line, "after the destination an alias names one height its sheet opens at, like `world.full -> world large`, not `\(words.joined(separator: " "))`")
+        }
+        guard let word = words.first else { return LaunchAlias(name: name, target: target) }
+        guard let detent = SheetDetent(word: word) else {
+            throw GraniteError.line(line, "`\(word)` is not a height a sheet rests at: after the destination comes \(SheetDetent.forms), like `world.full -> world large`")
+        }
+        if let problem = detent.problem { throw GraniteError.line(line, "`\(word)`: \(problem)") }
+        return LaunchAlias(name: name, target: target, detent: detent)
     }
 
     /// `Feed` → (`Feed()`, `Feed`); `Feed(kind: .all)` stays as written.

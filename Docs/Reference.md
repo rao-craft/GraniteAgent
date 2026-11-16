@@ -41,7 +41,7 @@ the root that holds the relays.
 | `relays` | service, component, navigation | `feed: FeedService`, or `Feed`; navigation reads them only for its `gate` |
 | `layout` | component | `list`, `grid`, `detail`, `form`, `settings`, `search`, `compose`, `tabs`, `threePane`, `blank` |
 | `shows`, `actions`, `views` | component | what the page draws, does, and its subviews (below) |
-| `destinations`, `style` | navigation | `feed: Feed "Feed" house`, then `default`, `sheet` (`sheet over models`, `sheet detents medium large`) or `gate` when it is more than a tab, and `auth.signup -> auth` for another name a launch may give (below); `adaptive`, `tabs`, `sidebar` or `split` |
+| `destinations`, `style` | navigation | `feed: Feed "Feed" house`, then `default`, `sheet` (`sheet over models`, `sheet detents medium large`, `sheet bare`) or `gate` when it is more than a tab, and `auth.signup -> auth` for another name a launch may give, `world.full -> world large` with its sheet's height (below); `adaptive`, `tabs`, `sidebar` or `split` |
 | `gate` | navigation | the condition over a relay's state that holds the gate: `account.state.session == nil`, its relay in `relays` |
 | `tabBar`, `tint` | navigation | `labels` when left out, `icons` for each tab's image alone (an empty title, as `Tab("", …)`); the selected tab's colour, a Swift colour (`Color.accent`), the accent colour when left out |
 | `tabFeedback` | navigation | the impact a tab change gives on iPhone: `light`, `medium`, `heavy`, `soft` or `rigid`; none when left out |
@@ -79,6 +79,8 @@ profile: Profile "Profile" person sheet over models      over: a launch naming i
 settings: Settings "Settings" gearshape sheet over profile    or puts that sheet up first and this one on it
 world: World "The World" infinity sheet over seer detents medium large    detents: the heights it rests at, up at the first
 model: Model "Model" folder sheet over models detents fraction(0.6)        medium, large, fraction(0.6), height(320)
+wallet: Wallet "Wallet" wallet.bifold sheet over models bare     bare: the page draws its own close; the sheet adds none
+world.full -> world large                  an alias's height: a launch with it opens the sheet there, once
 auth.signup -> auth                        a launch alias: opens what `auth` opens; any name, dots allowed
 seer: Seer "Seer" SeerMark().frame(width: 30, height: 30) default    in the symbol's place, a view the app has, drawn as the tab's image
 ```
@@ -93,7 +95,10 @@ a page presents goes up over whatever is up and its close takes down only it. An
 name used twice, and `over` on a tab, over the gate or round a cycle are refused. A sheet whose line names `detents`
 rests at those heights and goes up at the first, a launch's too, with its drag indicator showing; stacked on a sheet,
 it keeps its own. One that names none goes up large, as before; `detents` on a tab or the gate, a height that is none
-and one named twice are refused.
+and one named twice are refused. A `bare` sheet keeps its page in its stack and adds no Close: the page draws its own
+in its bar, and a swipe down still closes it. An alias's height wins over its sheet's first on a launch, once, for the
+sheet it opens and each sheet the launch puts up under it that rests at that height; on a tab, the gate, a sheet with
+no `detents` or a height the sheet does not rest at, it is refused.
 
 A view in the symbol's place is drawn once, at the screen's scale, with `ImageRenderer`, and shown in its own colours
 (`.renderingMode(.original)`), so a medallion or a logo stays as drawn while the tab bar tints the other tabs; it must
@@ -112,7 +117,7 @@ is refused with every reason at once, and nothing is written.
 | project | `<Name>.xcodeproj` from Granite's template (objectVersion 77, synchronized Shared, Components, Services, iOS, macOS, Tests and UITests; an app, unit tests and UI tests per platform, the UI tests skipped in the schemes until turned on, since they need an interactive session to drive the app; Swift 5, iOS 17, macOS 14; Granite pinned at `7ff33526` with GraniteAgents), shared schemes, `@main` App and delegate, `AppCommands`, `AppRoot`, `EnvironmentService` and `ConfigService` with their Ops and tests, the `Home` page that boots the app, `modalHosted()`, the asset catalog |
 | service | the struct with its tickets, lane, `set` and `binding` helpers and a ticketed entry per event; its center (`TransientState`, or a persisted `GraniteState` that reads old files); `Set` with a case per field; a reducer per event that marks the start in `reduce` and works in `effect`; `Ops.apply`; Ops tests; a relay in the root |
 | component | `<Page>`, `+Center`, `+View` (loading, empty, an error banner with a retry, pull to refresh, load more, a context menu and swipe per item, a toolbar, the first load gated on `isLoaded`), `+Actions`, reducers when asked, and `Views/<Page>.<Role>View.swift` per subview |
-| navigation | `AppDestination`, `PlatformNavigationView` for iOS and macOS, `LayoutService`, `Routes` over Granite's router, `Device`, and the root page shown with them; with `sheet`, `AppDestination.tabs` and `isSheet`, a `sheet` in the layout with `present` and `closeSheet`, and the sheet host on both platforms; with `gate`, `AppGate` in the root page's view file, beside the root that shows it; with `over`, `AppDestination.over`, a stack of `sheets` in the layout (`.sheet`, `.sheets`), a launch that puts up each sheet under the one it names, and a stacked sheet host on both platforms; with aliases, `AppDestination.aliases`, `launchNames` and `init?(launchName:)`, which `launchArgument` reads through; with a drawn view, `AppDestination.image(scale:)` over `ImageRenderer`; with `detents`, `AppDestination.detents` and `dragIndicator`, and `LayoutSheetDetents` in both sheet hosts (`.presentationDetents(_:selection:)` from the first); with `tabBar`, `tint`, `tabFeedback` and `overlays`, the tab items, `.tint`, `.sensoryFeedback` (iOS) and `.overlay` on the tab view; `LayoutOpsTests` cover the default, a sheet, the gate's launch rule, each alias, the stacked launch and each sheet's heights |
+| navigation | `AppDestination`, `PlatformNavigationView` for iOS and macOS, `LayoutService`, `Routes` over Granite's router, `Device`, and the root page shown with them; with `sheet`, `AppDestination.tabs` and `isSheet`, a `sheet` in the layout with `present` and `closeSheet`, and the sheet host on both platforms; with `gate`, `AppGate` in the root page's view file, beside the root that shows it; with `over`, `AppDestination.over`, a stack of `sheets` in the layout (`.sheet`, `.sheets`), a launch that puts up each sheet under the one it names, and a stacked sheet host on both platforms; with aliases, `AppDestination.aliases`, `launchNames` and `init?(launchName:)`, which `launchArgument` reads through; with a drawn view, `AppDestination.image(scale:)` over `ImageRenderer`; with `detents`, `AppDestination.detents` and `dragIndicator`, and `LayoutSheetDetents` in both sheet hosts (`.presentationDetents(_:selection:)` from the first); with `bare`, `AppDestination.closesItself`, which both hosts' toolbars read; with an alias's height, `AppDestination.aliasDetents` and `launchDetent(for:)`, which `LayoutSheetDetents` opens at; with `tabBar`, `tint`, `tabFeedback` and `overlays`, the tab items, `.tint`, `.sensoryFeedback` (iOS) and `.overlay` on the tab view; `LayoutOpsTests` cover the default, a sheet, the gate's launch rule, each alias, the stacked launch, each sheet's heights, the aliases' heights and the pages that draw their own close |
 | modals | `ModalService` (sheets with detents, alerts, toasts, travelling panels, Mac windows; state holds ids, a registry the views), its host views, and the real `modalHosted()`; with `toasts: window`, a passthrough `ModalToastWindow` at `.alert + 1` over the scene on iOS, holding `ModalToastStack`, each toast a card as wide as the screen (its symbol at 22, the message over a subtitle when `modals.toast(_:subtitle:style:)` gives one, in `toastDesign`, the ultra-thin material rounded at 24, a spring of 0.4 s), the overlay kept on the Mac |
 | package | `Package.swift`, `<Name>Root`, a test target; inside an app, `Packages/<Name>` linked into every app target |
 | link | Granite linked into every app target, Swift 5 on app targets that were on 6, the root, the boot and settings services and a root page written beside the app's code (file references and build files in a project of classic groups), and the root page mounted around the view the App showed |
@@ -147,6 +152,7 @@ GRANITE_BUILD=1 swift test     # a recipe app made call by call, built and teste
                                # gate) the same, and again with launch aliases, a sheet over a tab, a sheet over
                                # a sheet, the mark drawn as a tab's image, icon-only tabs, a tint, a tab change's
                                # impact, the first-run layer and the toast window, and again with sheets at their
-                               # own heights (a medium one over a tab, a fraction one stacked on it); a fresh
+                               # own heights (a medium one over a tab, a fraction one stacked on it, the first
+                               # drawing its own close, aliases naming heights, the tab bar's tint); a fresh
                                # Xcode project linked, built and tested
 ```

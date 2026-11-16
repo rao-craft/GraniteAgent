@@ -7,7 +7,8 @@ import XCTest
 /// checked, built and tested on macOS, built for the iOS simulator, its kit tested with SwiftPM; Seer's shell (a
 /// default tab, sheets and a sign-in gate) built and tested the same way, again with launch aliases, a sheet over a
 /// tab, a sheet over a sheet and the toast window, and again with sheets at their own heights, a medium one over a tab
-/// and a fraction one stacked on it; and a fresh Xcode project linked and built.
+/// and a fraction one stacked on it, the first drawing its own close, aliases naming heights and the tab bar's tint;
+/// and a fresh Xcode project linked and built.
 /// Gated (`GRANITE_BUILD=1`): a build takes minutes and fetches Granite.
 final class GraniteBuildTests: XCTestCase {
     /// Where builds keep their packages between runs, under the process's temporary files.
@@ -136,10 +137,12 @@ final class GraniteBuildTests: XCTestCase {
         if testRun?.totalFailureCount == 0 { try? FileManager.default.removeItem(at: derived) }
     }
 
-    /// Seer's sheets at their own heights (2026-11-15): Wallet over the middle tab at medium, then large; Profile stacked
-    /// on it at 0.6 of the screen, each with the drag indicator; Settings on Profile at the large detent alone; the Seer
-    /// page's button putting Wallet up. Built and its tests run on macOS (the heights' test and the stacked launch among
-    /// them), built for the iOS simulator, where `.presentationDetents(_:selection:)` puts each sheet up at its first.
+    /// Seer's sheets at their own heights (2026-11-15): Wallet over the middle tab at medium, then large, its page drawing
+    /// its own close (`bare`); Profile stacked on it at 0.6 of the screen or large, each with the drag indicator; Settings
+    /// on Profile at the large detent alone; `wallet.full` and `profile.full` opening them large; the tab bar's tint; the
+    /// Seer page's button putting Wallet up. Built and its tests run on macOS (the heights', the aliases' heights', the
+    /// bare sheet's and the stacked launch's among them), built for the iOS simulator, where
+    /// `.presentationDetents(_:selection:)` puts each sheet up at its first or the launch's alias's height.
     func testSheetsAtTheirOwnHeightsAMediumOneOverATabAndAFractionOneOnItBuild() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GRANITE_BUILD"] == "1", "set GRANITE_BUILD=1 to build the output")
         let folder = try Fixture.folder()
@@ -149,7 +152,7 @@ final class GraniteBuildTests: XCTestCase {
         try await Fixture.call(Fixture.account, in: app)
         try await Fixture.call(Fixture.signIn, in: app)
         for page in Fixture.seerPages + [Fixture.seerSettings] { try await Fixture.call(page, in: app) }
-        try await Fixture.call(Fixture.seerDetents, in: app)
+        try await Fixture.call(Fixture.seerSheets, in: app)
         try await Fixture.call(Fixture.seerWithWallet, in: app)
 
         let derived = folder.appendingPathComponent("DerivedData")
@@ -157,7 +160,8 @@ final class GraniteBuildTests: XCTestCase {
                                   "-skip-testing:SeerUITests-macOS", "build", "test"], in: app, derived: derived, home: folder.appendingPathComponent("home"))
         XCTAssertEqual(mac.status, 0, Shell.digest(mac.log))
         XCTAssertTrue(mac.log.contains("** TEST SUCCEEDED **"), Shell.digest(mac.log))
-        for test in ["aSheetRestsAtTheHeightsItsLineNamesAndGoesUpAtTheFirst", "aLaunchThatAsksForASheetPutsUpWhatItGoesOver", "aSheetGoesUpOverWhateverIsUpAndClosesAlone"] {
+        for test in ["aSheetRestsAtTheHeightsItsLineNamesAndGoesUpAtTheFirst", "anAliasPutsItsSheetUpAtTheHeightItNames", "aSheetWhosePageDrawsItsOwnCloseGetsNoCloseButton",
+                     "aLaunchThatAsksForASheetPutsUpWhatItGoesOver", "aSheetGoesUpOverWhateverIsUpAndClosesAlone", "anAliasOpensWhatItsDestinationOpens"] {
             XCTAssertTrue(mac.log.contains("Test \(test)() passed"), test)
         }
         XCTAssertFalse(mac.log.contains(": warning: "), "the app builds without a warning: \(mac.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")

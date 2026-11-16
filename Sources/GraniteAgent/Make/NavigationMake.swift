@@ -81,6 +81,7 @@ struct NavigationMake {
             problems.append("every destination is a sheet or the gate: at least one is a tab, which the sheets go up over and the gate gives way to")
         }
         let resolved = Self.resolve(aliases, destinations: destinations, problems: &problems)
+        Self.readHeights(resolved, destinations: destinations, problems: &problems)
         let overNotes = Self.readOver(&destinations, aliases: resolved, problems: &problems)
         let gate = readGate(gates.first, index: index, problems: &problems)
         let style = input.style ?? .adaptive
@@ -180,6 +181,15 @@ struct NavigationMake {
                               + "`.presentationDetents(_:selection:)`)" + (large.isEmpty ? "" : "; " + large.joined(separator: ", ")
                               + (large.count == 1 ? " goes" : " go") + " up at the large detent alone"))
         }
+        if shape.hasAliasDetents {
+            plan.notes.append("alias heights: " + shape.aliasDetents.map { alias in
+                "`-destination \(alias.name)` puts " + alias.sheets.map { "`\($0)`" }.joined(separator: " and ") + " up at \(alias.detent.word)"
+            }.joined(separator: "; ") + ", once (`AppDestination.launchDetent(for:)`); after the launch each sheet goes up at its first")
+        }
+        if shape.hasBare {
+            plan.notes.append(shape.bare.map { "`\($0)`" }.joined(separator: ", ") + (shape.bare.count == 1 ? " draws its own close (`bare`): its sheet adds" : " draw their own close (`bare`): their sheets add")
+                              + " no close button, and a swipe down still closes " + (shape.bare.count == 1 ? "it" : "them"))
+        }
         if !resolved.isEmpty {
             let pairs = Dictionary(grouping: resolved, by: \.target).sorted { a, b in
                 (destinations.firstIndex { $0.name == a.key } ?? 0) < (destinations.firstIndex { $0.name == b.key } ?? 0)
@@ -238,8 +248,11 @@ struct NavigationMake {
         for alias in unique {
             var walked = [alias.name]
             var target = alias.target
+            // An alias of an alias opens what that one opens, at its height when it names none of its own.
+            var detent = alias.detent
             while let next = table[target], !walked.contains(target) {
                 walked.append(target)
+                detent = detent ?? unique.first { $0.name == target }?.detent
                 target = next
             }
             if let start = walked.firstIndex(of: target) {
@@ -248,7 +261,7 @@ struct NavigationMake {
                     problems.append("`" + (cycle + [target]).joined(separator: " -> ") + "` is a cycle: an alias opens a destination, so one of them names it")
                 }
             } else if names.contains(target) {
-                resolved.append(LaunchAlias(name: alias.name, target: target))
+                resolved.append(LaunchAlias(name: alias.name, target: target, detent: detent))
             } else if walked.count == 1 {
                 problems.append("`\(alias.name) -> \(alias.target)`: `\(alias.target)` is neither a destination nor an alias (the destinations are "
                                 + names.map { "`\($0)`" }.joined(separator: ", ") + ")")
@@ -260,6 +273,25 @@ struct NavigationMake {
     /// Each sheet's `over`, read through an alias to the destination it names, and a note for each launch that puts up
     /// more than the sheet. One over no destination, over the gate, over itself, or over a sheet that goes up over it
     /// is a problem.
+    /// A height an alias names is one its sheet lists: an alias's height on a tab or the gate, on a sheet that lists no
+    /// heights, or one its sheet does not list is a problem.
+    static func readHeights(_ aliases: [LaunchAlias], destinations: [Destination], problems: inout [String]) {
+        for alias in aliases {
+            guard let detent = alias.detent, let destination = destinations.first(where: { $0.name == alias.target }) else { continue }
+            let opens = "`\(alias.name)` opens `\(alias.target)` at \(detent.word)"
+            if destination.place != .sheet {
+                problems.append(opens + ", and `\(alias.target)` is " + (destination.place == .gate ? "the gate" : "a tab")
+                                + ": a height is a sheet's, so drop `\(detent.word)` from the alias")
+            } else if destination.detents.isEmpty {
+                problems.append(opens + ", and `\(alias.target)` names no `detents`, so it goes up large: give it `detents` with \(detent.word) among them, "
+                                + "or drop `\(detent.word)` from the alias")
+            } else if !destination.detents.contains(detent) {
+                problems.append(opens + ", a height `\(alias.target)` does not rest at (it rests at "
+                                + destination.detents.map(\.word).joined(separator: ", ") + "): name one of them")
+            }
+        }
+    }
+
     static func readOver(_ destinations: inout [Destination], aliases: [LaunchAlias], problems: inout [String]) -> [String] {
         var notes: [String] = []
         for index in destinations.indices {

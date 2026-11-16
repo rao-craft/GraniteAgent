@@ -35,4 +35,7 @@ struct Destination: Equatable, Sendable {
     /// The heights a sheet rests at, as its line names them after `detents`, the first where it goes up; empty for a
     /// sheet at the large detent alone, as before, and for a tab or the gate.
     var detents: [SheetDetent] = []
+    /// Whether its line says `bare`: its page draws its own close in its bar, so its sheet adds none (a swipe down still
+    /// closes it).
+    var isBare = false
 }

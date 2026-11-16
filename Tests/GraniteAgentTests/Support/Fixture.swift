@@ -181,6 +181,19 @@ enum Fixture {
                        #"settings: Settings "Settings" gearshape sheet over profile"#],
         gate: "account.state.session == nil")
 
+    /// Seer's sheets as its floor asks next (r6a, 2026-11-15): Wallet's page draws its own close (`bare`), Profile rests
+    /// at 0.6 or large on it, `wallet.full` opens Wallet large and `profile.full` Wallet and Profile on it large, and the
+    /// tab bar takes the accent.
+    static var seerSheets: GraniteAppAgent.Input {
+        var input = seerDetents
+        input.destinations = [#"auth: SignIn "Sign In" person gate"#, #"library: Library "Library" books.vertical"#, #"seer: Seer "Seer" sparkles default"#,
+                              #"models: Models "Models" cpu"#, #"wallet: Wallet "Wallet" creditcard sheet over seer detents medium large bare"#,
+                              #"profile: Profile "Profile" person.crop.circle sheet over wallet detents fraction(0.6) large"#,
+                              #"settings: Settings "Settings" gearshape sheet over profile"#, "wallet.full -> wallet large", "profile.full -> profile large"]
+        input.tint = "Color.accentColor"
+        return input
+    }
+
     /// Seer's toasts, in a window of their own one level above alerts, their text in the serif design as its type is.
     static let seerToasts = GraniteAppAgent.Input(make: .modals, toasts: .window, toastDesign: .serif)
 

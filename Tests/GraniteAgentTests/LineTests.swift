@@ -134,6 +134,13 @@ final class LineTests: XCTestCase {
         XCTAssertEqual(try DestinationLine.parse(#"note: Note "Note" note.text detents height(320) sheet"#).detents, [.height(320)], "`detents` may come before `sheet`")
         XCTAssertEqual(try DestinationLine.parse(#"wallet: Wallet "Wallet" creditcard sheet"#).detents, [], "a sheet that names none goes up large, as before")
         XCTAssertEqual([SheetDetent.medium, .large, .fraction(0.78), .height(320)].map(\.swift), [".medium", ".large", ".fraction(0.78)", ".height(320)"])
+        let wallet = try DestinationLine.parse(#"wallet: Wallet "Wallet" wallet.bifold sheet over models bare"#)
+        XCTAssertTrue(wallet.isBare)
+        XCTAssertEqual(wallet.over, "models")
+        let bareWorld = try DestinationLine.parse(#"world: World "The World" infinity sheet over seer detents medium large bare"#)
+        XCTAssertEqual(bareWorld.detents, [.medium, .large], "`detents` stops at `bare`")
+        XCTAssertTrue(bareWorld.isBare)
+        XCTAssertFalse(world.isBare, "a sheet that does not say `bare` gets the close button")
         for (line, reason) in [(#"feed: Feed "Feed" house later"#, "comes `default`, `sheet` or `gate`, not `later`"),
                                (#"feed: Feed "Feed" house detents medium"#, "a tab is not a sheet: say `sheet detents medium`"),
                                (#"auth: SignIn "Sign In" person gate detents large"#, "a gate is not a sheet"),
@@ -145,6 +152,10 @@ final class LineTests: XCTestCase {
                                (#"feed: Feed "Feed" house sheet detents medium medium"#, "`medium` is named twice after `detents`"),
                                (#"feed: Feed "Feed" house sheet detents medium detents large"#, "`detents` is said twice"),
                                (#"feed: Feed "Feed" house sheet over detents medium"#, "`over` names what the sheet goes up over"),
+                               (#"feed: Feed "Feed" house bare"#, "a tab is not a sheet: say `sheet bare`"),
+                               (#"auth: SignIn "Sign In" person gate bare"#, "a gate is not a sheet"),
+                               (#"feed: Feed "Feed" house sheet bare bare"#, "`bare` is said twice"),
+                               (#"feed: Feed "Feed" house sheet over bare"#, "`over` names what the sheet goes up over"),
                                (#"feed: Feed "Feed" house sheet gate"#, "not both"),
                                (#"feed: Feed "Feed" house sheet default"#, "a sheet is not a tab"),
                                (#"feed: Feed "Feed" house gate default"#, "a gate is not a tab"),
@@ -189,10 +200,15 @@ final class LineTests: XCTestCase {
         XCTAssertEqual(try DestinationLine.alias("auth.signup -> auth"), LaunchAlias(name: "auth.signup", target: "auth"))
         XCTAssertEqual(try DestinationLine.alias("  settings.feedback->settings "), LaunchAlias(name: "settings.feedback", target: "settings"))
         XCTAssertEqual(try DestinationLine.alias("model-edit -> model.page"), LaunchAlias(name: "model-edit", target: "model.page"))
+        XCTAssertEqual(try DestinationLine.alias("world.full -> world large"), LaunchAlias(name: "world.full", target: "world", detent: .large))
+        XCTAssertEqual(try DestinationLine.alias("model.tall -> model fraction(0.6)")?.detent, .fraction(0.6))
+        XCTAssertNil(try DestinationLine.alias("auth.signup -> auth")?.detent, "an alias that names no height opens its sheet at its first")
         XCTAssertNil(try DestinationLine.alias(#"feed: Feed "Feed" house"#))
         XCTAssertNil(try DestinationLine.alias(#"feed: Feed(sort: { (a: Int) -> Bool in a > 0 }) "Feed" house"#))
         for (line, reason) in [("-> auth", "a launch alias is `name -> destination`"), ("auth signup -> auth", "`auth signup` is not a name a launch gives"),
-                               ("auth.signup ->", "a launch alias is `name -> destination`"), ("auth.signup -> auth gate", "`auth gate` is not a destination's name"),
+                               ("auth.signup ->", "a launch alias is `name -> destination`"), ("auth.signup -> auth gate", "`gate` is not a height a sheet rests at"),
+                               ("world.full -> world large medium", "an alias names one height its sheet opens at"),
+                               ("world.full -> world fraction(2)", "a fraction is a share of the screen's height"),
                                (".signup -> auth", "is not a name a launch gives")] {
             XCTAssertThrowsError(try DestinationLine.alias(line), line) { XCTAssertTrue("\($0)".contains(reason), "\(line) → \($0)") }
         }

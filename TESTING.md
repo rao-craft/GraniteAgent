@@ -184,6 +184,47 @@ indicator; its reference shots of `world`, `echoes`, `contributions`, `threads` 
 - not run on a simulator: Wallet up at medium, Profile at 0.6 on it and their drag indicators are compiled and
   unit-tested, not yet seen on a screen
 
+### Seer's floor, r6a: a page that draws its own close, an alias's height
+
+*2026-11-15 · the suite and the gated build, no model*
+
+The first floor reading of Seer (in Craft, `.work/measure/floor/r6a`: every agent call run straight to the runners,
+built, shot on an iPhone 18 Pro and measured beside the original) showed Wallet with the sheet's leading Close beside
+the page's own trailing `xmark`, and the `.full` screens at medium where the original opens them large.
+
+**The call**, on the Seer above (`Tests/GraniteAgentTests/Support/Fixture.swift`, `seerSheets`), then the Seer page with
+a button that puts Wallet up (`seerWithWallet`):
+
+```json
+{
+  "make": "navigation",
+  "destinations": [
+    "auth: SignIn \"Sign In\" person gate",
+    "library: Library \"Library\" books.vertical",
+    "seer: Seer \"Seer\" sparkles default",
+    "models: Models \"Models\" cpu",
+    "wallet: Wallet \"Wallet\" creditcard sheet over seer detents medium large bare",
+    "profile: Profile \"Profile\" person.crop.circle sheet over wallet detents fraction(0.6) large",
+    "settings: Settings \"Settings\" gearshape sheet over profile",
+    "wallet.full -> wallet large",
+    "profile.full -> profile large"
+  ],
+  "gate": "account.state.session == nil",
+  "relays": ["account: AccountService"],
+  "tint": "Color.accentColor"
+}
+```
+
+**Checks**:
+- `swift test`: 96 tests, 5 skipped (the gated builds), 0 failures; `SameBytesTests` also holds Seer's sheets at their
+  own heights (`seerDetents`) to the bytes of f82e0f7, the commit before `bare` and an alias's height
+- `GRANITE_BUILD=1 swift test --filter GraniteBuildTests`: 5 tests, 0 failures; the call above built and its tests run
+  on macOS (`anAliasPutsItsSheetUpAtTheHeightItNames`, `aSheetWhosePageDrawsItsOwnCloseGetsNoCloseButton`,
+  `aSheetRestsAtTheHeightsItsLineNamesAndGoesUpAtTheFirst`, the stacked launch and the aliases: passed), built for the
+  iOS simulator with no warning in the navigation
+- not run on a simulator: Wallet with no sheet Close and `-destination profile.full` opening Wallet and Profile large
+  are compiled and unit-tested, not yet seen on a screen
+
 ## Combinations
 
 Level 3 of the regime (`TESTING-REGIME.md`): one prompt a turn chaining agents, run through Craft on a local model,

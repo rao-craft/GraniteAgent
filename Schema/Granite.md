@@ -31,7 +31,7 @@ granite's own log.
 | `actions` | no | what a page does: `refresh = try await feed.load(page: 1)`, `more = …`, `open(post Post) = …`, `compose "New Post" square.and.pencil = …` |
 | `views` | no | a page's subviews: `row(post Post, vote (Bool) -> Void) "title, author and score, with a vote"`; a closure is an action the view sends up with `bubble`, routed by the page to the action of its name; a description is what the host's model writes the body from |
 | `body` | no | a blank page's body as Swift, written as given: the view the app has, filled from the page's relays and actions (`FeedView(posts: feed.state.posts, actions: …)`) |
-| `destinations` | no | the app's places, one a line: `feed: Feed "Feed" house`, or in the symbol's place a view the app has drawn as the tab's image (`seer: Seer "Seer" SeerMark().frame(width: 30, height: 30)`); after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `sheet over models` or `sheet over profile` a sheet a launch naming it puts up over that tab, or stacked on that sheet, `sheet over seer detents medium large` a sheet at those heights (`medium`, `large`, `fraction(0.6)`, `height(320)`), up at the first with its drag indicator showing (with none, large alone), `gate` shows it instead of the tabs while `gate` holds; `\| Detail` names the view beside it in the split style. A line `auth.signup -> auth` is a launch alias, any name with dots: `-destination auth.signup` opens what `-destination auth` opens (the gate's alias holds the gate, any other opens past it) and stays readable in the `destination` default |
+| `destinations` | no | the app's places, one a line: `feed: Feed "Feed" house`, or in the symbol's place a view the app has drawn as the tab's image (`seer: Seer "Seer" SeerMark().frame(width: 30, height: 30)`); after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `sheet over models` or `sheet over profile` a sheet a launch naming it puts up over that tab, or stacked on that sheet, `sheet over seer detents medium large` a sheet at those heights (`medium`, `large`, `fraction(0.6)`, `height(320)`), up at the first with its drag indicator showing (with none, large alone), `bare` after a sheet for a page that draws its own close (the sheet adds none), `gate` shows it instead of the tabs while `gate` holds; `\| Detail` names the view beside it in the split style. A line `auth.signup -> auth` is a launch alias, any name with dots: `-destination auth.signup` opens what `-destination auth` opens (the gate's alias holds the gate, any other opens past it) and stays readable in the `destination` default; after the destination an alias may name a height its sheet rests at, which a launch with it puts the sheet up at (`world.full -> world large`) |
 | `gate` | no | navigation's gate: a Swift condition over a relay's state, the relay named in `relays` (`account.state.session == nil`, `account: AccountService`); while it holds, the destination marked `gate` is shown full screen instead of the tabs, and a launch with `-destination <another>` opens past it |
 | `style` | no | how the app moves between destinations: adaptive (tabs on iPhone, a sidebar on iPad and Mac), tabs, sidebar, split |
 | `tabBar` | no | what a tab bar item shows: labels (its image over its title; when left out) or icons (its image alone, an empty title, as `Tab("", …)`) |
@@ -76,6 +76,27 @@ With an `AgentRefusal`: a kind and reasons, each with its fix. `input` and `call
 
 Each change made to make this agent more precise, dated, with the regime run that measured it and what it
 made of what it was asked before and after (`TESTING.md`). Newest first.
+
+### 2026-11-15 · navigation: a page that draws its own close, an alias that names its sheet's height
+
+Seer's first floor reading (r6a: every agent call run straight to the runners, built, shot on an iPhone 18 Pro beside
+the original) showed two closes on Wallet: the original's page titles itself and closes itself from a trailing
+`xmark`, and the kit does the same, so the sheet's own leading Close stood beside it. And the original opens its
+`.full` screens (World, Echoes, Contributions, Threads) at large where the plain name opens them at medium; an alias
+opened its sheet at the sheet's first height.
+
+A sheet line may now end `bare` (`wallet: Wallet "Wallet" wallet.bifold sheet over models bare`): the page stays in
+the sheet's stack, the sheet adds no Close for it (`AppDestination.closesItself`, read in the toolbar of both sheet
+hosts on both platforms), and a swipe down still closes it. An alias may end with a height its sheet rests at
+(`world.full -> world large`): `AppDestination.aliasDetents` lists each, and `launchDetent(for:)` gives a launch's
+sheets that height once, in place of their first, the sheet the alias opens and each one the launch puts up under it
+that rests at that height too (Echoes under Threads, as the original's `threads.full` opens both large); an alias of
+an alias opens at the height of the one it names unless it names its own. `bare` on a tab or the gate, a height on an
+alias to a tab, the gate or a sheet with no `detents`, and one its sheet does not rest at are refused. `LayoutOpsTests`
+check the aliases' heights and which pages draw their own close. A call that says neither writes what it wrote before,
+byte for byte (`SameBytesTests` now also holds Seer's sheets at their own heights to the bytes of f82e0f7).
+
+Measured: not yet. The Seer measure (Craft) is the first.
 
 ### 2026-11-15 · navigation: a sheet at its own heights
 

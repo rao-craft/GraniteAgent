@@ -3,12 +3,14 @@ import Foundation
 import XCTest
 @testable import GraniteAgent
 
-/// PIN: ADDITIVE ONLY. Launch aliases, `over`, the toast window and a sheet's `detents` are words a call says; every
-/// call that says none of them writes what it wrote before them, byte for byte. Each navigation and modals call in
-/// `before` (the guide's examples, each style, sheets, a default, a gate, and the gate taken away) is held to the bytes
-/// the agent wrote at 4e59a5e, the commit before the first of those words; each in `beforeDetents` (Seer's launch
-/// contract, its shell as the original draws it, its toasts in their own window) to the bytes of 9b5bc8f, the commit
-/// before `detents`. A scenario's digest is the SHA-256 of its files' paths and SHA-256s, one a line.
+/// PIN: ADDITIVE ONLY. Launch aliases, `over`, the toast window, a sheet's `detents`, `bare` and an alias's height are
+/// words a call says; every call that says none of them writes what it wrote before them, byte for byte. Each
+/// navigation and modals call in `before` (the guide's examples, each style, sheets, a default, a gate, and the gate
+/// taken away) is held to the bytes the agent wrote at 4e59a5e, the commit before the first of those words; each in
+/// `beforeDetents` (Seer's launch contract, its shell as the original draws it, its toasts in their own window) to the
+/// bytes of 9b5bc8f, the commit before `detents`; each in `beforeBare` (Seer's sheets at their own heights) to the bytes
+/// of f82e0f7, the commit before `bare` and an alias's height. A scenario's digest is the SHA-256 of its files' paths
+/// and SHA-256s, one a line.
 final class SameBytesTests: XCTestCase {
     static let before: [String: String] = [
         "recipes.adaptive": "83bb25e1ed00cb1a3d6d5ad2f6193b5ab87302ab38d88a91005a8f673d572417",
@@ -32,12 +34,17 @@ final class SameBytesTests: XCTestCase {
         "seer.toasts": "987ff00e234d87a550fbe99988192a2187ed74863ede624031ee879f0ac6dc5b",
     ]
 
+    /// Calls that say `detents` and none of the words after it, held to the bytes of f82e0f7.
+    static let beforeBare: [String: String] = [
+        "seer.detents": "aedd1999133d3bbadb64538e3e4b65cee332d12bfc4dc96480176b8e1161582f",
+    ]
+
     func testEveryCallWithoutTheNewWordsWritesTheBytesItWroteBefore() async throws {
         let recipes = try await Self.recipes(), seer = try await Self.seer(), shell = try await Self.seerShell()
-        let pinned = Self.before.merging(Self.beforeDetents) { first, _ in first }
+        let pinned = Self.before.merging(Self.beforeDetents) { first, _ in first }.merging(Self.beforeBare) { first, _ in first }
         var scenarios = Self.scenarios()
         XCTAssertEqual(Set(scenarios.map(\.name)), Set(pinned.keys))
-        XCTAssertEqual(pinned.count, Self.before.count + Self.beforeDetents.count, "a scenario is pinned once")
+        XCTAssertEqual(pinned.count, Self.before.count + Self.beforeDetents.count + Self.beforeBare.count, "a scenario is pinned once")
         scenarios.sort { $0.name < $1.name }
         for scenario in scenarios {
             let folder = try Fixture.folder().appendingPathComponent("app")
@@ -90,6 +97,7 @@ final class SameBytesTests: XCTestCase {
         scenarios.append(("seer.shell", Fixture.seerShell, .seerShell))
         scenarios.append(("seer.chrome", Fixture.seerChrome, .seerShell))
         scenarios.append(("seer.toasts", Fixture.seerToasts, .seerShell))
+        scenarios.append(("seer.detents", Fixture.seerDetents, .seerShell))
         return scenarios
     }
 
