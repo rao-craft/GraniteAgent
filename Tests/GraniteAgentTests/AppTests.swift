@@ -494,7 +494,8 @@ final class AppTests: XCTestCase {
         try await Fixture.call(Fixture.seerOnboarding, in: folder)
         let result = try await Fixture.call(Fixture.seerChrome, in: folder)
         for note in ["`seer`'s image is `SeerMark().frame(width: 30, height: 30)`, drawn once at the screen's scale in its own colours",
-                     "the tab bar shows each tab's image alone", "the selected tab takes `Color.accentColor`",
+                     "the tab bar shows each tab's image alone",
+                     "the selected tab takes `Color.accentColor`, and so does each sheet's stack (iOS), as the original presents its sheets from inside its tinted tab view",
                      "a tab change on iPhone gives a light impact", "`Onboarding()` is drawn over the tabs, under every sheet"] {
             XCTAssertTrue(result.notes.contains { $0.contains(note) }, "\(note) in \(result.notes)")
         }
@@ -509,15 +510,23 @@ final class AppTests: XCTestCase {
         let iOS = try read(folder, "iOS/PlatformNavigationView.swift")
         for line in ["@Environment(\\.displayScale) private var displayScale", "TabView(selection: layout.binding(\\.destination) { .destination($0) }) {",
                      ".tabItem { Label { Text(\"\") } icon: { destination.image(scale: displayScale) } }", "        }\n        .tint(Color.accentColor)\n",
-                     ".sensoryFeedback(.impact(weight: .light), trigger: layout.state.destination)", ".overlay { Onboarding() }\n        .modifier(LayoutSheetHost(level: 0))"] {
+                     ".sensoryFeedback(.impact(weight: .light), trigger: layout.state.destination)", ".overlay { Onboarding() }\n        .modifier(LayoutSheetHost(level: 0))",
+                     // The original presents its sheets from inside its tinted TabView, so each sheet's stack takes the tint.
+                     "                }\n                .tint(Color.accentColor)\n                .modifier(LayoutSheetHost(level: level + 1))"] {
             XCTAssertTrue(iOS.contains(line), "iOS: \(line)")
         }
+        XCTAssertFalse(try read(folder, "Components/Home/Home+View.swift").contains(".tint("), "the gate keeps the system's tint, as the original's sign-in does")
         let macOS = try read(folder, "macOS/PlatformNavigationView.swift")
         for line in ["@Environment(\\.displayScale) private var displayScale", "Label { Text(destination.title) } icon: { destination.image(scale: displayScale) }",
                      ".overlay { Onboarding() }"] {
             XCTAssertTrue(macOS.contains(line), "macOS: \(line)")
         }
         XCTAssertFalse(macOS.contains("sensoryFeedback"), "the Mac has no tab bar to feel")
+        XCTAssertFalse(macOS.contains(".tint("), "the Mac has no tab bar whose tint its sheets take")
+        var sidebar = Fixture.seerChrome
+        sidebar.style = .sidebar
+        try await Fixture.call(sidebar, in: folder)
+        XCTAssertFalse(try read(folder, "iOS/PlatformNavigationView.swift").contains(".tint("), "with no tab bar the tint is left out, the sheets' too")
 
         var icons = Fixture.seerShell
         icons.tabBar = .icons

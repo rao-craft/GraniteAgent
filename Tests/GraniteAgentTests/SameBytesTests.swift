@@ -9,8 +9,10 @@ import XCTest
 /// taken away) is held to the bytes the agent wrote at 4e59a5e, the commit before the first of those words; each in
 /// `beforeDetents` (Seer's launch contract, its shell as the original draws it, its toasts in their own window) to the
 /// bytes of 9b5bc8f, the commit before `detents`; each in `beforeBare` (Seer's sheets at their own heights) to the bytes
-/// of f82e0f7, the commit before `bare` and an alias's height. A scenario's digest is the SHA-256 of its files' paths
-/// and SHA-256s, one a line.
+/// of f82e0f7, the commit before `bare` and an alias's height. One change is on purpose: since the commit after ead2d98
+/// a sheet takes the tab bar's `tint`, so Seer's chrome (it gives `tint`) is held to 9b5bc8f's bytes but for its iOS
+/// navigation, whose sheets' stacks now carry `.tint(Color.accentColor)`. A scenario's digest is the SHA-256 of its
+/// files' paths and SHA-256s, one a line.
 final class SameBytesTests: XCTestCase {
     static let before: [String: String] = [
         "recipes.adaptive": "83bb25e1ed00cb1a3d6d5ad2f6193b5ab87302ab38d88a91005a8f673d572417",
@@ -30,7 +32,8 @@ final class SameBytesTests: XCTestCase {
     /// Calls that say the words of a2e0f28 and 9b5bc8f and no `detents`, held to the bytes of 9b5bc8f.
     static let beforeDetents: [String: String] = [
         "seer.shell": "68dcbd9190e7db4c24fc5666279cbd6eca7989b2a4c9baee301c6905b78612e7",
-        "seer.chrome": "01e26324e167fe27c8236aa265c489e8568561cf2cd8aaf39300e1e10b1484f9",
+        // 9b5bc8f wrote 01e26324…; its iOS/PlatformNavigationView.swift now tints each sheet's stack.
+        "seer.chrome": "c47dd895711e7e71a6add08fcf2456e9063cf3363d6b6524bfdc33db7a13ccfe",
         "seer.toasts": "987ff00e234d87a550fbe99988192a2187ed74863ede624031ee879f0ac6dc5b",
     ]
 

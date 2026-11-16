@@ -172,7 +172,7 @@
       "type" : "string"
     },
     "tint" : {
-      "description" : "the colour of the tab bar's selected item, a Swift colour: `Color.accent`; the app's accent colour when left out",
+      "description" : "the colour of the tab bar's selected item, a Swift colour: `Color.accent`, which each sheet's controls take too (not the gate's); the app's accent colour when left out",
       "type" : "string"
     },
     "toastDesign" : {

@@ -8,6 +8,9 @@
 //        addition below is gated on the `Shape` saying it. So does a call with no launch alias and no `over`
 //        (`SameBytesTests` holds every earlier call to its bytes), and one with no drawn image, `tabBar`, `tint`,
 //        `tabFeedback` or `overlays`, and one whose sheets name no `detents` or `bare` and whose aliases name no height.
+//  PIN:  A SHEET TAKES THE TAB BAR'S TINT. The original presents every sheet from inside its tinted tab view, so a
+//        sheet's bar buttons draw in the tint; the hosts here hang off the container outside the `TabView`, so with
+//        `tint` each sheet's stack is tinted itself (iOS, the styles with a tab bar). The gate is the root's, never tinted.
 
 import Foundation
 
@@ -206,6 +209,8 @@ enum NavigationTemplates {
 
     static func iOS(style: GraniteStyle, appTitle: String, shape: Shape? = nil) -> String {
         let shape = shape ?? Shape([])
+        // The sheets take the tab bar's tint where there is a tab bar to take it from.
+        let sheetTint = style == .adaptive || style == .tabs ? shape.tint : nil
         var code = Code()
         code.line("#if os(iOS)")
         code.line("import Granite")
@@ -247,7 +252,7 @@ enum NavigationTemplates {
         if shape.isStacked {
             code.line(".modifier(LayoutSheetHost(level: 0))")
         } else if !shape.sheets.isEmpty {
-            sheetHost(&code, mac: false, shape: shape)
+            sheetHost(&code, mac: false, shape: shape, tint: sheetTint)
         }
         code.close()
         if style == .adaptive || style == .tabs {
@@ -287,7 +292,7 @@ enum NavigationTemplates {
         }
         selection(&code)
         code.close()
-        if shape.isStacked { stackedSheetHost(&code, mac: false, shape: shape) }
+        if shape.isStacked { stackedSheetHost(&code, mac: false, shape: shape, tint: sheetTint) }
         if shape.hasDetents { sheetDetents(&code, shape: shape) }
         code.line("#endif")
         return code.text
@@ -332,12 +337,12 @@ enum NavigationTemplates {
         if shape.isStacked {
             code.line(".modifier(LayoutSheetHost(level: 0))")
         } else if !shape.sheets.isEmpty {
-            sheetHost(&code, mac: true, shape: shape)
+            sheetHost(&code, mac: true, shape: shape, tint: nil)
         }
         code.close()
         selection(&code)
         code.close()
-        if shape.isStacked { stackedSheetHost(&code, mac: true, shape: shape) }
+        if shape.isStacked { stackedSheetHost(&code, mac: true, shape: shape, tint: nil) }
         if shape.hasDetents { sheetDetents(&code, shape: shape) }
         code.line("#endif")
         return code.text
@@ -360,16 +365,17 @@ enum NavigationTemplates {
     /// The sheet over the tabs, from LayoutService's `sheet`: the page in a stack of its own, at the large detent (with
     /// `detents`, at its own heights), closed by its button or a swipe down (the binding writes nil back), and on the Mac
     /// at a window's size.
-    private static func sheetHost(_ code: inout Code, mac: Bool, shape: Shape) {
+    private static func sheetHost(_ code: inout Code, mac: Bool, shape: Shape, tint: String?) {
         code.scope(".sheet(item: layout.binding(\\.sheet) { .sheet($0) }) { destination in") { code in
-            sheetStack(&code, shape: shape)
+            sheetStack(&code, shape: shape, tint: tint)
             if mac { code.line(".frame(minWidth: Routes.windowSize.width, minHeight: Routes.windowSize.height)") }
             heights(&code, detents: shape.hasDetents)
         }
     }
 
-    /// A sheet's page in a stack of its own with a close button; with `bare`, the close only for a page that draws none.
-    private static func sheetStack(_ code: inout Code, shape: Shape) {
+    /// A sheet's page in a stack of its own with a close button; with `bare`, the close only for a page that draws none;
+    /// with `tint`, the stack in the tab bar's tint.
+    private static func sheetStack(_ code: inout Code, shape: Shape, tint: String?) {
         code.scope("NavigationStack {") { code in
             code.line("destination.view")
             code.indent()
@@ -382,6 +388,7 @@ enum NavigationTemplates {
             }
             code.dedent()
         }
+        if let tint { code.line(".tint(\(tint))") }
     }
 
     /// The sheet's close button, at the toolbar's cancel place: it takes down the sheet on top.
@@ -436,7 +443,7 @@ enum NavigationTemplates {
     /// its own with a close button, at the large detent (with `detents`, at its own heights), and over it the next. A
     /// launch's sheets go up at once and unanimated, each once the one under it is up, as if the person had gone there;
     /// in use one slides up over whatever is up, and a swipe down takes down it and every one over it.
-    private static func stackedSheetHost(_ code: inout Code, mac: Bool, shape: Shape) {
+    private static func stackedSheetHost(_ code: inout Code, mac: Bool, shape: Shape, tint: String?) {
         code.line()
         code.doc("The sheet at `level` of LayoutService's sheets, over the view: the page in a stack of its own with a close button, "
                  + "and over it the next. A launch's sheets go up at once, unanimated, each over the one under it, as if the person had "
@@ -452,7 +459,7 @@ enum NavigationTemplates {
         code.line("content")
         code.indent()
         code.scope(".sheet(item: $shown) { destination in") { code in
-            sheetStack(&code, shape: shape)
+            sheetStack(&code, shape: shape, tint: tint)
             code.line(".modifier(LayoutSheetHost(level: level + 1))")
             if mac { code.line(".frame(minWidth: Routes.windowSize.width, minHeight: Routes.windowSize.height)") }
             heights(&code, detents: shape.hasDetents)

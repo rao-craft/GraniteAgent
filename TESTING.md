@@ -184,13 +184,14 @@ indicator; its reference shots of `world`, `echoes`, `contributions`, `threads` 
 - not run on a simulator: Wallet up at medium, Profile at 0.6 on it and their drag indicators are compiled and
   unit-tested, not yet seen on a screen
 
-### Seer's floor, r6a: a page that draws its own close, an alias's height
+### Seer's floor, r6a: a page that draws its own close, an alias's height, the sheets' tint
 
 *2026-11-15 · the suite and the gated build, no model*
 
 The first floor reading of Seer (in Craft, `.work/measure/floor/r6a`: every agent call run straight to the runners,
 built, shot on an iPhone 18 Pro and measured beside the original) showed Wallet with the sheet's leading Close beside
-the page's own trailing `xmark`, and the `.full` screens at medium where the original opens them large.
+the page's own trailing `xmark`, that `xmark` black where the original's is bronze (its sheets take its tab view's
+tint), and the `.full` screens at medium where the original opens them large.
 
 **The call**, on the Seer above (`Tests/GraniteAgentTests/Support/Fixture.swift`, `seerSheets`), then the Seer page with
 a button that puts Wallet up (`seerWithWallet`):
@@ -222,8 +223,10 @@ a button that puts Wallet up (`seerWithWallet`):
   on macOS (`anAliasPutsItsSheetUpAtTheHeightItNames`, `aSheetWhosePageDrawsItsOwnCloseGetsNoCloseButton`,
   `aSheetRestsAtTheHeightsItsLineNamesAndGoesUpAtTheFirst`, the stacked launch and the aliases: passed), built for the
   iOS simulator with no warning in the navigation
-- not run on a simulator: Wallet with no sheet Close and `-destination profile.full` opening Wallet and Profile large
-  are compiled and unit-tested, not yet seen on a screen
+- the sheets' stacks take `Color.accentColor` on iOS (the gate does not): `SameBytesTests` holds Seer's chrome to the
+  bytes of 9b5bc8f but for `iOS/PlatformNavigationView.swift`, the one file the tint changes
+- not run on a simulator: Wallet with no sheet Close, its tinted bar and `-destination profile.full` opening Wallet and
+  Profile large are compiled and unit-tested, not yet seen on a screen
 
 ## Combinations
 

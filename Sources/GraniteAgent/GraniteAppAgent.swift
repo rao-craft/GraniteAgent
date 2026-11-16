@@ -56,7 +56,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         public var style: GraniteStyle?
         /// What a tab bar item shows: its image over its title, or its image alone.
         public var tabBar: GraniteTabBar?
-        /// The colour the tab bar's selected item takes, a Swift expression: `Color.accent`.
+        /// The colour the tab bar's selected item takes, a Swift expression: `Color.accent`; each sheet's stack takes it too.
         public var tint: String?
         /// The impact a person feels when the tab changes.
         public var tabFeedback: GraniteFeedback?
@@ -242,7 +242,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         "gate": "navigation's gate: a Swift condition over a relay's state, the relay named in `relays` (`account.state.session == nil`, `account: AccountService`); while it holds, the destination marked `gate` is shown full screen instead of the tabs, and a launch with `-destination <another>` opens past it",
         "style": "how the app moves between destinations: adaptive (tabs on iPhone, a sidebar on iPad and Mac), tabs, sidebar, split",
         "tabBar": "what a tab bar item shows: labels (its image over its title; when left out) or icons (its image alone, an empty title, as `Tab(\"\", …)`)",
-        "tint": "the colour of the tab bar's selected item, a Swift colour: `Color.accent`; the app's accent colour when left out",
+        "tint": "the colour of the tab bar's selected item, a Swift colour: `Color.accent`, which each sheet's controls take too (not the gate's); the app's accent colour when left out",
         "tabFeedback": "the impact felt when the tab changes on iPhone: light, medium, heavy, soft, rigid; none when left out",
         "overlays": "views navigation draws over the tabs, bottom to top, under every sheet: a page the app has, `Onboarding` (a first-run layer that takes touches only where it draws)",
         "toasts": "where modals shows its toasts: overlay (over the root view; when left out) or window (on iOS in a window of their own one level above alerts, `.alert + 1`, over every sheet and alert, a touch elsewhere passing through, the styles in circle symbols; the Mac keeps the overlay)",

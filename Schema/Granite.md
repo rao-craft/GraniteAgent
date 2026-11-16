@@ -35,7 +35,7 @@ granite's own log.
 | `gate` | no | navigation's gate: a Swift condition over a relay's state, the relay named in `relays` (`account.state.session == nil`, `account: AccountService`); while it holds, the destination marked `gate` is shown full screen instead of the tabs, and a launch with `-destination <another>` opens past it |
 | `style` | no | how the app moves between destinations: adaptive (tabs on iPhone, a sidebar on iPad and Mac), tabs, sidebar, split |
 | `tabBar` | no | what a tab bar item shows: labels (its image over its title; when left out) or icons (its image alone, an empty title, as `Tab("", …)`) |
-| `tint` | no | the colour of the tab bar's selected item, a Swift colour: `Color.accent`; the app's accent colour when left out |
+| `tint` | no | the colour of the tab bar's selected item, a Swift colour: `Color.accent`, which each sheet's controls take too (not the gate's); the app's accent colour when left out |
 | `tabFeedback` | no | the impact felt when the tab changes on iPhone: light, medium, heavy, soft, rigid; none when left out |
 | `overlays` | no | views navigation draws over the tabs, bottom to top, under every sheet: a page the app has, `Onboarding` (a first-run layer that takes touches only where it draws) |
 | `toasts` | no | where modals shows its toasts: overlay (over the root view; when left out) or window (on iOS in a window of their own one level above alerts, `.alert + 1`, over every sheet and alert, a touch elsewhere passing through, the styles in circle symbols; the Mac keeps the overlay) |
@@ -76,6 +76,21 @@ With an `AgentRefusal`: a kind and reasons, each with its fix. `input` and `call
 
 Each change made to make this agent more precise, dated, with the regime run that measured it and what it
 made of what it was asked before and after (`TESTING.md`). Newest first.
+
+### 2026-11-15 · navigation: sheets take the tab bar's tint
+
+The original presents every sheet from inside its tinted tab view (Components/Main/MainView.swift:90,
+`.tint(Color.tint)`), so a sheet's bar buttons draw in the brand's colour: Wallet's `xmark` is bronze in the
+reference shot. The shell wrote `tint` on the `TabView` alone, and its sheet hosts hang off the container outside it,
+so the floor's (r6a) sheets drew their controls in the system's colour.
+
+With `tint`, each sheet's stack now takes it too (`NavigationStack { … }.tint(Color.accent)`, in both sheet hosts),
+on iOS in the styles with a tab bar, where the tab bar takes it. The gate is the root's and keeps the system's tint,
+as the original's sign-in, outside its tab view, does; the Mac, with no tab bar, takes none. This changes bytes on
+purpose for a call that gives `tint` and has sheets: Seer's chrome (`SameBytesTests`) writes 9b5bc8f's files but for
+`iOS/PlatformNavigationView.swift`, whose sheets now carry the tint. A call without `tint` writes what it wrote.
+
+Measured: not yet. The Seer measure (Craft) is the first.
 
 ### 2026-11-15 · navigation: a page that draws its own close, an alias that names its sheet's height
 

@@ -213,7 +213,10 @@ struct NavigationMake {
         let hasTabBar = style == .adaptive || style == .tabs
         if hasTabBar {
             if shape.iconsOnly { plan.notes.append("the tab bar shows each tab's image alone, with an empty title as `Tab(\"\", …)` writes it") }
-            if let tint { plan.notes.append("the selected tab takes `\(tint)`") }
+            if let tint {
+                plan.notes.append("the selected tab takes `\(tint)`" + (shape.sheets.isEmpty ? "" : ", and so does each sheet's stack (iOS), as the original presents "
+                                  + "its sheets from inside its tinted tab view; the gate keeps the system's"))
+            }
             if let feedback = input.tabFeedback {
                 plan.notes.append("a tab change on iPhone gives a \(feedback.rawValue) impact (`.sensoryFeedback(\(feedback.sensory), trigger: layout.state.destination)`)")
             }
