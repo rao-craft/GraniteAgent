@@ -19,7 +19,7 @@
       "type" : "string"
     },
     "destinations" : {
-      "description" : "the app's places, one a line: `feed: Feed \"Feed\" house`; after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `gate` shows it instead of the tabs while `gate` holds; `| Detail` names the view beside it in the split style",
+      "description" : "the app's places, one a line: `feed: Feed \"Feed\" house`, or in the symbol's place a view the app has drawn as the tab's image (`seer: Seer \"Seer\" SeerMark().frame(width: 30, height: 30)`); after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `sheet over models` or `sheet over profile` a sheet a launch naming it puts up over that tab, or stacked on that sheet, `gate` shows it instead of the tabs while `gate` holds; `| Detail` names the view beside it in the split style. A line `auth.signup -> auth` is a launch alias, any name with dots: `-destination auth.signup` opens what `-destination auth` opens (the gate's alias holds the gate, any other opens past it) and stays readable in the `destination` default",
       "items" : {
         "type" : "string"
       },
@@ -84,6 +84,13 @@
       "description" : "what the work or the page is for, in a sentence: what the host's model writes bodies from",
       "type" : "string"
     },
+    "overlays" : {
+      "description" : "views navigation draws over the tabs, bottom to top, under every sheet: a page the app has, `Onboarding` (a first-run layer that takes touches only where it draws)",
+      "items" : {
+        "type" : "string"
+      },
+      "type" : "array"
+    },
     "packages" : {
       "description" : "remote packages the app links, pinned: `https://github.com/kean/Nuke@<40-hex revision> Nuke NukeUI`",
       "items" : {
@@ -94,6 +101,13 @@
     "persist" : {
       "description" : "whether a service's state is kept between launches",
       "type" : "boolean"
+    },
+    "platforms" : {
+      "description" : "the lowest OS each app runs on, one a line: `iOS 26`, `macOS 26`; iOS 17 and macOS 14 when left out: project",
+      "items" : {
+        "type" : "string"
+      },
+      "type" : "array"
     },
     "relays" : {
       "description" : "the services a service's work calls, a page reads, or navigation's `gate` reads: `feed: FeedService` or `Feed`",
@@ -134,8 +148,39 @@
       ],
       "type" : "string"
     },
+    "tabBar" : {
+      "description" : "what a tab bar item shows: labels (its image over its title; when left out) or icons (its image alone, an empty title, as `Tab(\"\", …)`)",
+      "enum" : [
+        "labels",
+        "icons"
+      ],
+      "type" : "string"
+    },
+    "tabFeedback" : {
+      "description" : "the impact felt when the tab changes on iPhone: light, medium, heavy, soft, rigid; none when left out",
+      "enum" : [
+        "light",
+        "medium",
+        "heavy",
+        "soft",
+        "rigid"
+      ],
+      "type" : "string"
+    },
     "team" : {
       "description" : "the 10-character Apple team id the app signs with: project",
+      "type" : "string"
+    },
+    "tint" : {
+      "description" : "the colour of the tab bar's selected item, a Swift colour: `Color.accent`; the app's accent colour when left out",
+      "type" : "string"
+    },
+    "toasts" : {
+      "description" : "where modals shows its toasts: overlay (over the root view; when left out) or window (on iOS in a window of their own one level above alerts, `.alert + 1`, over every sheet and alert, a touch elsewhere passing through, the styles in circle symbols; the Mac keeps the overlay)",
+      "enum" : [
+        "overlay",
+        "window"
+      ],
       "type" : "string"
     },
     "type" : {

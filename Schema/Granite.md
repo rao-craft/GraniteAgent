@@ -20,6 +20,7 @@ granite's own log.
 | `name` | no | the app's or the kit's name, letters and digits, like `Recipes`: project and package |
 | `bundleId` | no | the app's bundle identifier; com.example.<name> when left out: project |
 | `team` | no | the 10-character Apple team id the app signs with: project |
+| `platforms` | no | the lowest OS each app runs on, one a line: `iOS 26`, `macOS 26`; iOS 17 and macOS 14 when left out: project |
 | `type` | no | the service (`Feed` makes FeedService) or the page (`Feed`) to make |
 | `into` | no | the folder, relative to the project; Services/<Type> or Components/<Type> when left out; a kit's folder (`Packages/RecipeKit`) puts a public service in the kit |
 | `state` | no | fields, one a line, in the models syntax: `posts [Post] = []`, `selected String?`; a page's `let post Post` is an input it is made with |
@@ -30,9 +31,14 @@ granite's own log.
 | `actions` | no | what a page does: `refresh = try await feed.load(page: 1)`, `more = …`, `open(post Post) = …`, `compose "New Post" square.and.pencil = …` |
 | `views` | no | a page's subviews: `row(post Post, vote (Bool) -> Void) "title, author and score, with a vote"`; a closure is an action the view sends up with `bubble`, routed by the page to the action of its name; a description is what the host's model writes the body from |
 | `body` | no | a blank page's body as Swift, written as given: the view the app has, filled from the page's relays and actions (`FeedView(posts: feed.state.posts, actions: …)`) |
-| `destinations` | no | the app's places, one a line: `feed: Feed "Feed" house`; after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `gate` shows it instead of the tabs while `gate` holds; `\| Detail` names the view beside it in the split style |
+| `destinations` | no | the app's places, one a line: `feed: Feed "Feed" house`, or in the symbol's place a view the app has drawn as the tab's image (`seer: Seer "Seer" SeerMark().frame(width: 30, height: 30)`); after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `sheet over models` or `sheet over profile` a sheet a launch naming it puts up over that tab, or stacked on that sheet, `gate` shows it instead of the tabs while `gate` holds; `\| Detail` names the view beside it in the split style. A line `auth.signup -> auth` is a launch alias, any name with dots: `-destination auth.signup` opens what `-destination auth` opens (the gate's alias holds the gate, any other opens past it) and stays readable in the `destination` default |
 | `gate` | no | navigation's gate: a Swift condition over a relay's state, the relay named in `relays` (`account.state.session == nil`, `account: AccountService`); while it holds, the destination marked `gate` is shown full screen instead of the tabs, and a launch with `-destination <another>` opens past it |
 | `style` | no | how the app moves between destinations: adaptive (tabs on iPhone, a sidebar on iPad and Mac), tabs, sidebar, split |
+| `tabBar` | no | what a tab bar item shows: labels (its image over its title; when left out) or icons (its image alone, an empty title, as `Tab("", …)`) |
+| `tint` | no | the colour of the tab bar's selected item, a Swift colour: `Color.accent`; the app's accent colour when left out |
+| `tabFeedback` | no | the impact felt when the tab changes on iPhone: light, medium, heavy, soft, rigid; none when left out |
+| `overlays` | no | views navigation draws over the tabs, bottom to top, under every sheet: a page the app has, `Onboarding` (a first-run layer that takes touches only where it draws) |
+| `toasts` | no | where modals shows its toasts: overlay (over the root view; when left out) or window (on iOS in a window of their own one level above alerts, `.alert + 1`, over every sheet and alert, a touch elsewhere passing through, the styles in circle symbols; the Mac keeps the overlay) |
 | `root` | no | the root page; Home when left out |
 | `packages` | no | remote packages the app links, pinned: `https://github.com/kean/Nuke@<40-hex revision> Nuke NukeUI` |
 | `imports` | no | modules the files import beside Foundation, SwiftUI and Granite; a local package's are found on their own |
@@ -69,6 +75,43 @@ With an `AgentRefusal`: a kind and reasons, each with its fix. `input` and `call
 
 Each change made to make this agent more precise, dated, with the regime run that measured it and what it
 made of what it was asked before and after (`TESTING.md`). Newest first.
+
+### 2026-11-15 · navigation: launch aliases, sheets over a tab or a sheet, the shell as the original draws it; modals: a toast window above alerts
+
+Seer is checked by launching it straight into each of its screens with `-destination <name>`, and many of those
+names are not places of their own: Sign Up and the one-time code are steps of Sign In, a restored reply is the Seer
+tab, Feedback is pushed in Settings. Some of its sheets go up over a tab that is not the default (Profile over
+Models) or over another sheet (Settings over Profile, Sinatra Threads over Echoes), and its toast shows over every
+sheet and alert. Navigation knew one name per place, put every sheet up over the default tab, and modals drew the
+toasts in the root view's overlay, under sheets.
+
+A destinations line `auth.signup -> auth` is now a launch alias, any name with dots: `-destination auth.signup`
+opens exactly what `-destination auth` opens (the tab selected, the sheet up, the gate shown or passed; the gate's
+alias holds the gate, any other opens past it), and the name stays in the `destination` default for the page to open
+its own inner state. `AppDestination.launchNames` lists every name a launch may give and `AppDestination(launchName:)`
+reads one; `LayoutOpsTests` open each alias. A sheet line may end `sheet over models` or `sheet over profile`: a
+launch naming it selects that tab first, or puts that sheet up first and this one on it, unanimated, as if the person
+had gone there; with an `over` in the call, a sheet a page presents goes up over whatever is up, and its close takes
+down only it. An alias naming nothing, a cycle, a name used twice, and `over` on a tab, over the gate, over itself or
+round a cycle are refused with every reason. `make: modals` takes `toasts: window`: on iOS the toasts show in a
+passthrough `UIWindow` at `.alert + 1` over the scene, each a card as wide as the screen as the original draws its
+toast (the style's symbol at 22 semibold beside the message, the ultra-thin material rounded at 24, a shadow, a
+spring of 0.4 s, 3 s on screen), the success, error, warning and info styles in green `checkmark.circle.fill`, red
+`xmark.circle.fill`, orange `exclamationmark.triangle.fill` and blue `info.circle.fill`; the Mac keeps the overlay.
+
+The shell is also held to the original's look (Components/Main/MainView.swift): its tabs show their images alone,
+the middle one is the app's medallion in full colour, the selected tab takes the brand's tint, a tab change gives a
+light impact, and the first-run layer lies over the tabs. In the symbol's place a destinations line may name a view
+the app has (`seer: Seer "Seer" SeerMark().frame(width: 30, height: 30) default`): `AppDestination.image(scale:)`
+draws it once with `ImageRenderer` at the screen's scale, `.renderingMode(.original)`, so the tab bar never tints it.
+`tabBar: icons` gives each tab item an empty title, as `Tab("", …)` writes it; `tint: Color.accent` puts `.tint` on
+the tab view; `tabFeedback: light` writes `.sensoryFeedback(.impact(weight: .light), trigger:
+layout.state.destination)` on iOS; `overlays: ["Onboarding"]` draws each page named over the tabs, bottom to top,
+under every sheet. A drawn view or an overlay the project lacks is refused naming the page to make first. A call with
+none of the new words writes what it wrote before, byte for byte (`SameBytesTests` holds twelve navigation and modals
+calls to the bytes of 4e59a5e).
+
+Measured: not yet. The Seer measure (Craft) is the first.
 
 ### 2026-11-15 · navigation: a default tab, sheets over the tabs, a gate before them
 

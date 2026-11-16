@@ -13,6 +13,9 @@ $granite a service that keeps the recipes, loaded a page at a time and kept betw
 $granite a list page of the recipes with pull to refresh and a favourite in each row's menu
 $granite navigation with Recipes, Search and Settings
 $granite navigation with Library, Seer and Models as tabs, opening on Seer, Wallet as a sheet, behind Sign In
+$granite let a launch open auth.signup on Sign In, Profile over Models, and Settings over Profile
+$granite modals with the toasts above every sheet and alert
+$granite icon-only tabs with the app's mark as the middle tab, a light tap on a tab change, and onboarding over the tabs
 ```
 
 Ask for one piece or a whole app in a request. Craft runs the steps one at a time and shows each on its agent map.
@@ -27,7 +30,11 @@ Ask for one piece or a whole app in a request. Craft runs the steps one at a tim
   each with loading, empty and error states, pull to refresh, loading more, and the actions you named in menus,
   swipes and toolbars.
 - **Navigation and modals.** Your destinations laid out for each device, the tab it opens on, places that slide up
-  as sheets, a sign-in gate before them, and one place for the app's sheets, alerts, toasts and panels.
+  as sheets, a sign-in gate before them, and one place for the app's sheets, alerts, toasts and panels. Every screen
+  opens straight from a launch, a sheet over the tab or the sheet it belongs to, and an inner screen by a name of its
+  own (`auth.signup`), so tests and screenshots need no taps; toasts can sit in their own window above every alert.
+  The tab bar can show images alone, your mark as a tab in its own colours, your tint on the selected tab and a
+  light tap on a change, with a first-run layer over the tabs.
 - **Granite in an app you already have.** Point it at an existing Xcode project and it links Granite and adds the
   root and settings around the app's own code, without rewriting your views.
 

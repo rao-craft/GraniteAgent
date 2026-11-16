@@ -34,6 +34,11 @@ final class GraniteAgentTests: XCTestCase {
             .init(name: "destinations", schema: lines, required: false),
             .init(name: "gate", schema: .string, required: false),
             .init(name: "style", schema: .choice(["adaptive", "tabs", "sidebar", "split"]), required: false),
+            .init(name: "tabBar", schema: .choice(["labels", "icons"]), required: false),
+            .init(name: "tint", schema: .string, required: false),
+            .init(name: "tabFeedback", schema: .choice(["light", "medium", "heavy", "soft", "rigid"]), required: false),
+            .init(name: "overlays", schema: lines, required: false),
+            .init(name: "toasts", schema: .choice(["overlay", "window"]), required: false),
             .init(name: "root", schema: .string, required: false),
             .init(name: "packages", schema: lines, required: false),
             .init(name: "imports", schema: lines, required: false),
@@ -53,6 +58,9 @@ final class GraniteAgentTests: XCTestCase {
         for layout in GraniteLayout.allCases { XCTAssertTrue(guide.contains(layout.rawValue), "the guide names the \(layout.rawValue) layout") }
         for word in ["-> field", "+> field", "= call", "relays", "items =", "selection", "\"Section/Label\"", "refresh", "more", "persist",
                      "destinations", "`default`", "`sheet`", "layout.present", "\"gate\": \"account.state.session == nil\"", "modals.sheet",
+                     "`sheet over models`", "`sheet over profile`", "`auth.signup -> auth`", "\"toasts\": \"window\"",
+                     "SeerMark().frame(width: 30, height: 30)", "\"tabBar\": \"icons\"", "\"tint\": \"Color.accent\"", "\"tabFeedback\": \"light\"",
+                     "\"overlays\": [\"Onboarding\"]",
                      "Packages/RecipeKit", "ContentView", "let recipe Recipe", "Not for"] {
             XCTAssertTrue(guide.contains(word), "the guide says \(word)")
         }

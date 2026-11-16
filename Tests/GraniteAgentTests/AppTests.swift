@@ -115,6 +115,100 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(try read(folder, "Shared/Utility/AppDestination.swift").contains("opensPastGate"))
     }
 
+    /// Seer's launch contract (2026-11-15): a sub-destination opens its parent by alias and stays readable, the gate's
+    /// aliases hold the gate, Profile goes up over the Models tab and Settings stacked on Profile when a launch names
+    /// them, unanimated, and in use a sheet goes up over whatever is up and closes alone.
+    func testLaunchAliasesAndSheetsOverATabOrASheet() async throws {
+        let folder = try Fixture.folder()
+        try await Fixture.call(Fixture.seerProject, in: folder)
+        try await Fixture.call(Fixture.account, in: folder)
+        try await Fixture.call(Fixture.signIn, in: folder)
+        for page in Fixture.seerPages + [Fixture.seerSettings] { try await Fixture.call(page, in: folder) }
+        let result = try await Fixture.call(Fixture.seerShell, in: folder)
+        XCTAssertEqual(result.expected.map(\.name), ["auth", "library", "seer", "models", "profile", "settings", "wallet"], "an alias is not a destination")
+        for note in ["`auth.signup`, `auth.code` open `auth` (on the gate); `void.reply` opens `seer`; `model.edit` opens `models`; `settings.feedback` opens `settings`",
+                     "`-destination profile` selects `models` with `profile` up", "`-destination settings` selects `models` and puts up `profile`, then `settings`, unanimated"] {
+            XCTAssertTrue(result.notes.contains { $0.contains(note) }, "\(note) in \(result.notes)")
+        }
+
+        let destinations = try read(folder, "Shared/Utility/AppDestination.swift")
+        for line in ["    case auth\n    case library\n    case seer\n    case models\n    case profile\n    case settings\n    case wallet\n\n",
+                     "static var launchArgument: AppDestination? {\n        UserDefaults.standard.string(forKey: \"destination\").flatMap(AppDestination.init(launchName:))",
+                     "static let aliases: [(name: String, destination: AppDestination)] = [\n        (\"auth.signup\", .auth),\n        (\"auth.code\", .auth),\n"
+                        + "        (\"void.reply\", .seer),\n        (\"settings.feedback\", .settings),\n        (\"model.edit\", .models),\n    ]",
+                     "static var launchNames: [String] { allCases.map(\\.rawValue) + aliases.map(\\.name) }", "init?(launchName: String) {",
+                     "case .profile: .models\n        case .settings: .profile\n        default: nil",
+                     "`-destination auth.signup` holds the gate as `-destination auth` does", "return destination != gate"] {
+            XCTAssertTrue(destinations.contains(line), line)
+        }
+        let center = try read(folder, "Services/LayoutService/LayoutService+Center.swift")
+        for line in ["var sheets: [AppDestination] = []", "while let sheet = under, sheet.isSheet, !sheets.contains(sheet) {\n                    sheets.insert(sheet, at: 0)\n"
+                        + "                    under = sheet.over\n                }", "destination = under.flatMap { $0.isTab ? $0 : nil } ?? .seer"] {
+            XCTAssertTrue(center.contains(line), line)
+        }
+        XCTAssertTrue(try read(folder, "Services/LayoutService/Reducers/LayoutService.Set.swift").contains("case sheet(AppDestination?)\n"
+            + "                /// The sheets up, the lowest first: what a swipe down leaves.\n                case sheets([AppDestination])"))
+        let ops = try read(folder, "Services/LayoutService/Ops/LayoutOps.swift")
+        for line in ["putUp(destination, on: &state)", "state.sheets.removeLast()", "state.sheets.removeSubrange((index + 1)...)", "// The gate is shown while it holds"] {
+            XCTAssertTrue(ops.contains(line), line)
+        }
+        XCTAssertTrue(try read(folder, "Services/LayoutService/LayoutService.swift").contains("/// Closes the sheet on top, leaving the one under it.\n    func closeSheet() {"))
+        for platform in ["iOS", "macOS"] {
+            let view = try read(folder, "\(platform)/PlatformNavigationView.swift")
+            for line in [".modifier(LayoutSheetHost(level: 0))", "private struct LayoutSheetHost: ViewModifier {", ".sheet(item: $shown) { destination in",
+                         ".modifier(LayoutSheetHost(level: level + 1))", "unanimated.disablesAnimations = true", "withTransaction(unanimated) { shown = sheet }",
+                         "layout.set(.sheets(Array(layout.state.sheets.prefix(level))))", "Button(\"Close\", systemImage: \"xmark\") { layout.closeSheet() }"] {
+                XCTAssertTrue(view.contains(line), "\(platform): \(line)")
+            }
+            XCTAssertFalse(view.contains(".sheet(item: layout.binding(\\.sheet)"), platform)
+        }
+        XCTAssertTrue(try read(folder, "Components/Home/Home+View.swift").contains("/// So does a launch alias of the gate's destination: `-destination auth.signup`, `-destination auth.code`."))
+        let tests = try read(folder, "Tests/LayoutOpsTests.swift")
+        for line in ["@Test func aSheetGoesUpOverWhateverIsUpAndClosesAlone()", "#expect(state.sheets == [.profile, .settings], \"a sheet goes up over the sheet that is up\")",
+                     "@Test func aLaunchThatAsksForASheetPutsUpWhatItGoesOver()",
+                     "state = LayoutService.Center.State(launch: .settings)\n        #expect(state.destination == .models, \"-destination settings\")\n"
+                        + "        #expect(state.sheets == [.profile, .settings], \"-destination settings\")",
+                     "#expect(state.destination == .seer, \"-destination wallet\")\n        #expect(state.sheets == [.wallet], \"-destination wallet\")",
+                     "for alias in AppDestination.aliases where alias.destination == .auth {",
+                     "for name in AppDestination.launchNames where AppDestination(launchName: name) != .auth {", "@Test func anAliasOpensWhatItsDestinationOpens()"] {
+            XCTAssertTrue(tests.contains(line), line)
+        }
+    }
+
+    /// A launch name opens one place and a sheet goes up over something real: an alias that names nothing, a cycle, a
+    /// name used twice, a sheet over nothing, over the gate, over itself, or two sheets over each other are refused with
+    /// every reason, and nothing is written.
+    func testAliasesAndOverAreRefusedWithEveryReason() async throws {
+        let folder = try Fixture.folder()
+        try await Fixture.call(Fixture.seerProject, in: folder)
+        try await Fixture.call(Fixture.account, in: folder)
+        try await Fixture.call(Fixture.signIn, in: folder)
+        for page in Fixture.seerPages + [Fixture.seerSettings] { try await Fixture.call(page, in: folder) }
+        func refusal(_ destinations: [String]) async -> String {
+            var input = Fixture.seerShell
+            input.destinations = [#"auth: SignIn "Sign In" person gate"#, #"library: Library "Library" books.vertical"#, #"seer: Seer "Seer" sparkles default"#,
+                                  #"models: Models "Models" cpu"#] + destinations
+            do {
+                try await Fixture.call(input, in: folder)
+                return ""
+            } catch { return "\(error)" }
+        }
+        var text = await refusal([#"profile: Profile "Profile" person.crop.circle sheet over settings"#, #"settings: Settings "Settings" gearshape sheet over profile"#,
+                                  #"wallet: Wallet "Wallet" creditcard sheet over nowhere"#,
+                                  "auth.signup -> autth", "a.b -> c.d", "c.d -> a.b", "seer -> library", "void.reply -> seer", "void.reply -> library"])
+        for reason in ["`auth.signup -> autth`: `autth` is neither a destination nor an alias", "`a.b -> c.d -> a.b` is a cycle",
+                       "`seer` is a destination and an alias", "the alias `void.reply` is named twice", "`wallet` goes up over `nowhere`, which is not a destination",
+                       "`profile` over `settings` over `profile` is a cycle"] {
+            XCTAssertTrue(text.contains(reason), "\(reason) in \(text)")
+        }
+        text = await refusal([#"profile: Profile "Profile" person.crop.circle sheet over auth.code"#, #"wallet: Wallet "Wallet" creditcard sheet over wallet"#,
+                              "auth.code -> auth"])
+        for reason in ["`profile` goes up over `auth`, the gate", "`wallet` goes up over itself"] {
+            XCTAssertTrue(text.contains(reason), "\(reason) in \(text)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Shared/Utility/AppDestination.swift").path))
+    }
+
     /// With sheets and no default, the tab on screen is still kept between launches, and one that is no longer a tab
     /// reads as the first; a default alone changes only where a plain launch opens.
     func testWithNoDefaultTheTabIsKeptAndADefaultAloneListsEveryDestination() async throws {
@@ -251,6 +345,95 @@ final class AppTests: XCTestCase {
         }
         XCTAssertTrue(try read(folder, "Shared/Utility/AppRoot.swift").contains("@Relay(.silence) var modals: ModalService"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Tests/ModalOpsTests.swift").path))
+    }
+
+    /// Seer's shell as the original draws it: each tab's image alone, the mark drawn as the middle tab's image in its own
+    /// colours, the accent on the selected tab, a light impact on a tab change, and the first-run layer over the tabs and
+    /// under every sheet; with icons alone and no drawn image the symbols stay; an overlay or a drawn view the project
+    /// does not have is refused.
+    func testTheTabBarDrawsTheMarkIconsAloneAndHostsAnOverlay() async throws {
+        let folder = try Fixture.folder()
+        try await Fixture.call(Fixture.seerProject, in: folder)
+        try await Fixture.call(Fixture.account, in: folder)
+        try await Fixture.call(Fixture.signIn, in: folder)
+        for page in Fixture.seerPages + [Fixture.seerSettings] { try await Fixture.call(page, in: folder) }
+
+        var missing = ""
+        do { try await Fixture.call(Fixture.seerChrome, in: folder) } catch { missing = "\(error)" }
+        for reason in ["`SeerMark` is not in the project: the view drawn as `seer`'s image is one the app has",
+                       "the overlay `Onboarding` is not in the project: make the page first (`make: component`, `type: Onboarding`)"] {
+            XCTAssertTrue(missing.contains(reason), "\(reason) in \(missing)")
+        }
+
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("Shared/Views"), withIntermediateDirectories: true)
+        try Fixture.seerMark.write(to: folder.appendingPathComponent("Shared/Views/SeerMark.swift"), atomically: true, encoding: .utf8)
+        try await Fixture.call(Fixture.seerOnboarding, in: folder)
+        let result = try await Fixture.call(Fixture.seerChrome, in: folder)
+        for note in ["`seer`'s image is `SeerMark().frame(width: 30, height: 30)`, drawn once at the screen's scale in its own colours",
+                     "the tab bar shows each tab's image alone", "the selected tab takes `Color.accentColor`",
+                     "a tab change on iPhone gives a light impact", "`Onboarding()` is drawn over the tabs, under every sheet"] {
+            XCTAssertTrue(result.notes.contains { $0.contains(note) }, "\(note) in \(result.notes)")
+        }
+        let destinations = try read(folder, "Shared/Utility/AppDestination.swift")
+        for line in ["@MainActor func image(scale: CGFloat) -> Image {", "case .library: Image(systemName: \"books.vertical.fill\")",
+                     "case .seer: Self.drawn(SeerMark().frame(width: 30, height: 30), scale: scale)",
+                     "case .models: Image(systemName: \"externaldrive.fill.badge.person.crop\")", "let renderer = ImageRenderer(content: view)",
+                     "renderer.scale = scale", "return Image(uiImage: image).renderingMode(.original)", "return Image(nsImage: image).renderingMode(.original)"] {
+            XCTAssertTrue(destinations.contains(line), line)
+        }
+        XCTAssertFalse(destinations.contains("var symbol: String {"), "a drawn image replaces the symbols' list")
+        let iOS = try read(folder, "iOS/PlatformNavigationView.swift")
+        for line in ["@Environment(\\.displayScale) private var displayScale", "TabView(selection: layout.binding(\\.destination) { .destination($0) }) {",
+                     ".tabItem { Label { Text(\"\") } icon: { destination.image(scale: displayScale) } }", "        }\n        .tint(Color.accentColor)\n",
+                     ".sensoryFeedback(.impact(weight: .light), trigger: layout.state.destination)", ".overlay { Onboarding() }\n        .modifier(LayoutSheetHost(level: 0))"] {
+            XCTAssertTrue(iOS.contains(line), "iOS: \(line)")
+        }
+        let macOS = try read(folder, "macOS/PlatformNavigationView.swift")
+        for line in ["@Environment(\\.displayScale) private var displayScale", "Label { Text(destination.title) } icon: { destination.image(scale: displayScale) }",
+                     ".overlay { Onboarding() }"] {
+            XCTAssertTrue(macOS.contains(line), "macOS: \(line)")
+        }
+        XCTAssertFalse(macOS.contains("sensoryFeedback"), "the Mac has no tab bar to feel")
+
+        var icons = Fixture.seerShell
+        icons.tabBar = .icons
+        try await Fixture.call(icons, in: folder)
+        let plain = try read(folder, "iOS/PlatformNavigationView.swift")
+        XCTAssertTrue(plain.contains(".tabItem { Label(\"\", systemImage: destination.symbol) }"), plain)
+        XCTAssertFalse(plain.contains("displayScale") || plain.contains(".overlay {") || plain.contains(".tint(") || plain.contains("sensoryFeedback"), plain)
+        XCTAssertTrue(try read(folder, "Shared/Utility/AppDestination.swift").contains("var symbol: String {"))
+    }
+
+    /// The toasts' own window is opt-in (Seer, 2026-11-15): `toasts: window` hosts them on iOS in a passthrough window
+    /// one level above alerts, the four styles in the system's symbols, the Mac keeping the overlay; made again without
+    /// it, the files are as they were.
+    func testTheToastWindowIsOptIn() async throws {
+        let folder = try await app(pages: false)
+        let result = try await Fixture.call(Fixture.seerToasts, in: folder)
+        XCTAssertTrue(result.types.contains("ModalToastWindow"), "\(result.types)")
+        XCTAssertTrue(result.notes.contains { $0.contains("one level above alerts (`.alert + 1`)") }, "\(result.notes)")
+        let hosting = try read(folder, "Shared/Utility/ModalHosting.swift")
+        for line in ["final class ModalToastWindow: UIWindow {", "window.windowLevel = .alert + 1", "window.rootViewController = host",
+                     "override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {\n        toastFrame.contains(point)",
+                     "#if os(iOS)\n            .background(ModalToastAnchor())\n            #else\n            .overlay(alignment: .top) {",
+                     ".modifier(ModalSheetHost(level: 0))", "toasts?.overrideUserInterfaceStyle = style"] {
+            XCTAssertTrue(hosting.contains(line), line)
+        }
+        let toast = try read(folder, "Services/ModalService/Views/ModalToastView.swift")
+        for symbol in ["checkmark.circle.fill", "xmark.circle.fill", "exclamationmark.triangle.fill", "info.circle.fill"] {
+            XCTAssertTrue(toast.contains("\"\(symbol)\""), symbol)
+        }
+        // The original's toast (Shared/Views/Toast/ToastView.swift, ToastService.swift): a card as wide as the screen.
+        for line in ["HStack(spacing: 12) {", ".font(.system(size: 22, weight: .semibold))", ".background(.ultraThinMaterial)",
+                     ".clipShape(RoundedRectangle(cornerRadius: 24))", ".shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)",
+                     ".padding(.horizontal, 16)", "case .info: .blue"] {
+            XCTAssertTrue(toast.contains(line), line)
+        }
+        XCTAssertTrue(hosting.contains(".animation(.spring(response: 0.4, dampingFraction: 0.8), value: toasts)"), hosting)
+
+        try await Fixture.call(Fixture.modals, in: folder)
+        XCTAssertEqual(try read(folder, "Shared/Utility/ModalHosting.swift"), ModalTemplates.hosting)
+        XCTAssertEqual(try read(folder, "Services/ModalService/Views/ModalToastView.swift"), ModalTemplates.toastView)
     }
 
     func testAKitInAnAppIsLinkedIntoBothApps() async throws {

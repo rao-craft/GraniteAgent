@@ -5,7 +5,9 @@
 //  PIN:  THE DESTINATION LIVES IN A SERVICE. A menu, a key or another page moves the app (`layout.select(.feed)`),
 //        so the selection is LayoutService's, not the navigation view's (skill §3).
 //  PIN:  A CALL WITH NO `default`, `sheet` OR `gate` WRITES WHAT IT WROTE BEFORE THOSE WORDS, byte for byte: every
-//        addition below is gated on the `Shape` saying it.
+//        addition below is gated on the `Shape` saying it. So does a call with no launch alias and no `over`
+//        (`SameBytesTests` holds every earlier call to its bytes), and one with no drawn image, `tabBar`, `tint`,
+//        `tabFeedback` or `overlays`.
 
 import Foundation
 
@@ -21,18 +23,42 @@ enum NavigationTemplates {
         var sheets: [String]
         /// The gate, as its case.
         var gate: String?
+        /// The launch aliases, each with the case of the destination it opens.
+        var aliases: [LaunchAlias] = []
+        /// What each sheet whose line says `over` goes up over when a launch names it, by their cases.
+        var over: [String: String] = [:]
+        /// Whether a line draws a view the app has as its image, in the symbol's place.
+        var isDrawn = false
+        /// Whether a tab bar item shows its image alone (`tabBar: icons`).
+        var iconsOnly = false
+        /// The colour of the tab bar's selected item, a Swift expression (`tint`).
+        var tint: String?
+        /// The feedback a tab change gives on iPhone, as SwiftUI writes it (`tabFeedback`).
+        var feedback: String?
+        /// Views drawn over the tabs, bottom to top (`overlays`).
+        var overlays: [String] = []
 
-        init(_ destinations: [Destination]) {
+        init(_ destinations: [Destination], aliases: [LaunchAlias] = []) {
             let tabs = destinations.filter { $0.place == .tab }
             let opening = tabs.first(where: \.isDefault) ?? tabs.first ?? destinations.first
             self.opening = opening.map { SwiftName.member($0.name) } ?? ""
             isDefault = tabs.contains(where: \.isDefault)
             sheets = destinations.filter { $0.place == .sheet }.map { SwiftName.member($0.name) }
             gate = destinations.first { $0.place == .gate }.map { SwiftName.member($0.name) }
+            self.aliases = aliases.map { LaunchAlias(name: $0.name, target: SwiftName.member($0.target)) }
+            for destination in destinations where destination.place == .sheet {
+                if let under = destination.over { over[SwiftName.member(destination.name)] = SwiftName.member(under) }
+            }
+            isDrawn = destinations.contains { $0.drawn != nil }
         }
 
         /// No line said `default`, `sheet` or `gate`: the navigation is written as it was before those words.
         var isPlain: Bool { !isDefault && sheets.isEmpty && gate == nil }
+        /// Whether a sheet's line says `over`: the sheets then stack, a launch puts up what each goes over, and in use
+        /// one goes up over whatever is up.
+        var isStacked: Bool { !over.isEmpty }
+        /// The aliases of the gate's destination: a launch that names one holds the gate as the gate's own name does.
+        var gateAliases: [String] { aliases.filter { $0.target == gate }.map(\.name) }
         /// Whether some destination is not a tab, so the tab bar and the sidebar list `AppDestination.tabs`.
         var hasNonTabs: Bool { !sheets.isEmpty || gate != nil }
         /// What the tab bar and the sidebar list.
@@ -41,8 +67,8 @@ enum NavigationTemplates {
 
     // MARK: - Destinations
 
-    static func destinations(_ destinations: [Destination], split: Bool) -> String {
-        let shape = Shape(destinations)
+    static func destinations(_ destinations: [Destination], split: Bool, aliases: [LaunchAlias] = []) -> String {
+        let shape = Shape(destinations, aliases: aliases)
         var code = Code()
         code.line("import SwiftUI")
         code.line()
@@ -57,11 +83,15 @@ enum NavigationTemplates {
         code.line()
         code.line("var id: Self { self }")
         code.line()
-        code.line("/// The destination a launch asks for with `-destination <name>`: how UI tests and screenshots open a page.")
-        code.scope("static var launchArgument: AppDestination? {") { code in
-            code.line("UserDefaults.standard.string(forKey: \"destination\").flatMap(AppDestination.init(rawValue:))")
+        if shape.aliases.isEmpty {
+            code.line("/// The destination a launch asks for with `-destination <name>`: how UI tests and screenshots open a page.")
+            code.scope("static var launchArgument: AppDestination? {") { code in
+                code.line("UserDefaults.standard.string(forKey: \"destination\").flatMap(AppDestination.init(rawValue:))")
+            }
+            code.line()
+        } else {
+            launchNames(&code, shape)
         }
-        code.line()
         if shape.hasNonTabs { places(&code, shape) }
         code.line("/// The destination's name, as the tab bar and the sidebar show it.")
         code.scope("var title: String {") { code in
@@ -72,10 +102,14 @@ enum NavigationTemplates {
             }
         }
         code.line()
-        code.line("/// The SF Symbol beside its name.")
-        code.scope("var symbol: String {") { code in
-            code.switchOn("self") { code in
-                for destination in destinations { code.line("case .\(SwiftName.member(destination.name)): \"\(destination.symbol)\"") }
+        if shape.isDrawn {
+            drawnImages(&code, destinations)
+        } else {
+            code.line("/// The SF Symbol beside its name.")
+            code.scope("var symbol: String {") { code in
+                code.switchOn("self") { code in
+                    for destination in destinations { code.line("case .\(SwiftName.member(destination.name)): \"\(destination.symbol)\"") }
+                }
             }
         }
         code.line()
@@ -104,6 +138,43 @@ enum NavigationTemplates {
         return code.text
     }
 
+    /// A destination's image when a line draws a view in its symbol's place: its SF Symbol, or that view drawn once,
+    /// at the screen's scale and in its own colours, so the tab bar never tints it.
+    private static func drawnImages(_ code: inout Code, _ destinations: [Destination]) {
+        let drawn = destinations.filter { $0.drawn != nil }.map { "`.\(SwiftName.member($0.name))`" }
+        code.doc("The image beside its name: its SF Symbol, or for " + drawn.joined(separator: ", ")
+                 + " a view the app has, drawn once at the screen's scale in its own colours, which the tab bar never tints.")
+        code.scope("@MainActor func image(scale: CGFloat) -> Image {") { code in
+            code.switchOn("self") { code in
+                for destination in destinations {
+                    let image = destination.drawn.map { "Self.drawn(\($0), scale: scale)" } ?? "Image(systemName: \"\(destination.symbol)\")"
+                    code.line("case .\(SwiftName.member(destination.name)): \(image)")
+                }
+            }
+        }
+        code.line()
+        code.line("/// `view` drawn into an image at `scale`, in its own colours.")
+        code.scope("@MainActor private static func drawn(_ view: some View, scale: CGFloat) -> Image {") { code in
+            code.line("let renderer = ImageRenderer(content: view)")
+            code.line("renderer.scale = scale")
+            code.line("#if os(iOS)")
+            code.line("guard let image = renderer.uiImage else { return Image(systemName: \"circle.dashed\") }")
+            code.line("return Image(uiImage: image).renderingMode(.original)")
+            code.line("#else")
+            code.line("guard let image = renderer.nsImage else { return Image(systemName: \"circle.dashed\") }")
+            code.line("return Image(nsImage: image).renderingMode(.original)")
+            code.line("#endif")
+        }
+    }
+
+    /// How a tab bar item or a sidebar row shows a destination: its title beside its image, or with `tabBar: icons`
+    /// an empty title, as `Tab("", …)` writes it.
+    private static func label(_ shape: Shape, titled: Bool) -> String {
+        let title = titled ? "destination.title" : "\"\""
+        if shape.isDrawn { return "Label { Text(\(title)) } icon: { destination.image(scale: displayScale) }" }
+        return "Label(\(title), systemImage: destination.symbol)"
+    }
+
     // MARK: - The navigation views
 
     static func iOS(style: GraniteStyle, appTitle: String, shape: Shape? = nil) -> String {
@@ -123,6 +194,7 @@ enum NavigationTemplates {
         code.line("@Relay var layout: LayoutService")
         code.line("@StateObject private var clock = RelayClock([RelayClock.on(LayoutService.self)])")
         code.line("@Environment(\\.horizontalSizeClass) private var horizontalSizeClass")
+        if shape.isDrawn { code.line("@Environment(\\.displayScale) private var displayScale") }
         code.line()
         code.open("var body: some View {")
         switch style {
@@ -141,7 +213,15 @@ enum NavigationTemplates {
         code.scope(".onChange(of: horizontalSizeClass, initial: true) { _, sizeClass in") { code in
             code.line("layout.set(.style(sizeClass == .compact ? .compact : .expanded))")
         }
-        if !shape.sheets.isEmpty { sheetHost(&code, mac: false) }
+        if let feedback = shape.feedback, style == .adaptive || style == .tabs {
+            code.line(".sensoryFeedback(\(feedback), trigger: layout.state.destination)")
+        }
+        overlays(&code, shape)
+        if shape.isStacked {
+            code.line(".modifier(LayoutSheetHost(level: 0))")
+        } else if !shape.sheets.isEmpty {
+            sheetHost(&code, mac: false)
+        }
         code.close()
         if style == .adaptive || style == .tabs {
             code.line()
@@ -149,17 +229,18 @@ enum NavigationTemplates {
                 code.scope("TabView(selection: layout.binding(\\.destination) { .destination($0) }) {") { code in
                     code.scope("ForEach(\(shape.listed)) { destination in") { code in
                         code.scope("NavigationStack {") { $0.line("destination.view") }
-                        code.line(".tabItem { Label(destination.title, systemImage: destination.symbol) }")
+                        code.line(".tabItem { \(label(shape, titled: !shape.iconsOnly)) }")
                         code.line(".tag(destination)")
                     }
                 }
+                if let tint = shape.tint { code.line(".tint(\(tint))") }
             }
         }
         if style == .adaptive || style == .sidebar {
             code.line()
             code.scope("private var sidebar: some View {") { code in
                 code.open("NavigationSplitView {")
-                sidebarList(&code, title: appTitle, listed: shape.listed)
+                sidebarList(&code, title: appTitle, listed: shape.listed, label: label(shape, titled: true))
                 code.middle("} detail: {")
                 code.scope("NavigationStack {") { $0.line("layout.state.destination.view") }
                 code.close()
@@ -169,7 +250,7 @@ enum NavigationTemplates {
             code.line()
             code.scope("private var columns: some View {") { code in
                 code.open("NavigationSplitView {")
-                sidebarList(&code, title: appTitle, listed: shape.listed)
+                sidebarList(&code, title: appTitle, listed: shape.listed, label: label(shape, titled: true))
                 code.middle("} content: {")
                 code.scope("NavigationStack {") { $0.line("layout.state.destination.view") }
                 code.middle("} detail: {")
@@ -179,6 +260,7 @@ enum NavigationTemplates {
         }
         selection(&code)
         code.close()
+        if shape.isStacked { stackedSheetHost(&code, mac: false) }
         code.line("#endif")
         return code.text
     }
@@ -196,10 +278,11 @@ enum NavigationTemplates {
         code.open("struct PlatformNavigationView: View {")
         code.line("@Relay var layout: LayoutService")
         code.line("@StateObject private var clock = RelayClock([RelayClock.on(LayoutService.self)])")
+        if shape.isDrawn { code.line("@Environment(\\.displayScale) private var displayScale") }
         code.line()
         code.open("var body: some View {")
         code.open("NavigationSplitView {")
-        sidebarList(&code, title: appTitle, listed: shape.listed)
+        sidebarList(&code, title: appTitle, listed: shape.listed, label: label(shape, titled: true))
         if style == .split {
             code.middle("} content: {")
             code.scope("NavigationStack {") { $0.line("layout.state.destination.view") }
@@ -217,21 +300,32 @@ enum NavigationTemplates {
                 code.line("LayoutService.resizeWindow(width: detail == nil ? LayoutService.compactWidth : LayoutService.expandedWidth)")
             }
         }
-        if !shape.sheets.isEmpty { sheetHost(&code, mac: true) }
+        overlays(&code, shape)
+        if shape.isStacked {
+            code.line(".modifier(LayoutSheetHost(level: 0))")
+        } else if !shape.sheets.isEmpty {
+            sheetHost(&code, mac: true)
+        }
         code.close()
         selection(&code)
         code.close()
+        if shape.isStacked { stackedSheetHost(&code, mac: true) }
         code.line("#endif")
         return code.text
     }
 
-    private static func sidebarList(_ code: inout Code, title: String, listed: String) {
+    private static func sidebarList(_ code: inout Code, title: String, listed: String, label: String) {
         code.scope("List(\(listed), selection: sidebarSelection) { destination in") { code in
-            code.line("Label(destination.title, systemImage: destination.symbol)")
+            code.line(label)
             code.line("    .tag(destination)")
         }
         code.line(".navigationTitle(\"\(SwiftName.escaped(title))\")")
         code.line(".navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 300)")
+    }
+
+    /// The views `overlays` names, over the tabs and under every sheet, bottom to top.
+    private static func overlays(_ code: inout Code, _ shape: Shape) {
+        for overlay in shape.overlays { code.line(".overlay { \(overlay) }") }
     }
 
     /// The sheet over the tabs, from LayoutService's `sheet`: the page in a stack of its own, at the large detent,
@@ -251,6 +345,93 @@ enum NavigationTemplates {
             if mac { code.line(".frame(minWidth: Routes.windowSize.width, minHeight: Routes.windowSize.height)") }
             code.line(".presentationDetents([.large])")
         }
+    }
+
+    /// The sheets LayoutService holds, one over another (a shape that says `over`): the one at `level` in a stack of
+    /// its own with a close button, at the large detent, and over it the next. A launch's sheets go up at once and
+    /// unanimated, each once the one under it is up, as if the person had gone there; in use one slides up over
+    /// whatever is up, and a swipe down takes down it and every one over it.
+    private static func stackedSheetHost(_ code: inout Code, mac: Bool) {
+        code.line()
+        code.doc("The sheet at `level` of LayoutService's sheets, over the view: the page in a stack of its own with a close button, "
+                 + "and over it the next. A launch's sheets go up at once, unanimated, each over the one under it, as if the person had "
+                 + "gone there; in use one slides up over whatever is up.")
+        code.open("private struct LayoutSheetHost: ViewModifier {")
+        code.line("let level: Int")
+        code.line("@Relay var layout: LayoutService")
+        code.line("@StateObject private var clock = RelayClock([RelayClock.on(LayoutService.self)])")
+        code.line("/// The sheet on screen at this level: LayoutService's, put up without animation the first time.")
+        code.line("@State private var shown: AppDestination?")
+        code.line()
+        code.open("func body(content: Content) -> some View {")
+        code.line("content")
+        code.indent()
+        code.scope(".sheet(item: $shown) { destination in") { code in
+            code.scope("NavigationStack {") { code in
+                code.line("destination.view")
+                code.indent()
+                code.scope(".toolbar {") { code in
+                    code.scope("ToolbarItem(placement: .cancellationAction) {") { code in
+                        code.line("Button(\"Close\", systemImage: \"xmark\") { layout.closeSheet() }")
+                    }
+                }
+                code.dedent()
+            }
+            code.line(".modifier(LayoutSheetHost(level: level + 1))")
+            if mac { code.line(".frame(minWidth: Routes.windowSize.width, minHeight: Routes.windowSize.height)") }
+            code.line(".presentationDetents([.large])")
+        }
+        code.scope(".task {") { code in
+            code.line("// A launch's sheets: each goes up once the one under it is up, without animation.")
+            code.line("guard shown == nil, let sheet else { return }")
+            code.line("if level > 0 { try? await Task.sleep(for: .milliseconds(150)) }")
+            code.line("var unanimated = Transaction()")
+            code.line("unanimated.disablesAnimations = true")
+            code.line("withTransaction(unanimated) { shown = sheet }")
+        }
+        code.scope(".onChange(of: layout.state.sheets) { _, _ in") { code in
+            code.line("if shown != sheet { shown = sheet }")
+        }
+        code.scope(".onChange(of: shown) { _, now in") { code in
+            code.line("// Swiped down: this sheet closes, and every one over it.")
+            code.line("if now == nil, sheet != nil { layout.set(.sheets(Array(layout.state.sheets.prefix(level)))) }")
+        }
+        code.dedent()
+        code.close()
+        code.line()
+        code.line("/// LayoutService's sheet at this level; nil when none is.")
+        code.scope("private var sheet: AppDestination? {") { code in
+            code.line("layout.state.sheets.indices.contains(level) ? layout.state.sheets[level] : nil")
+        }
+        code.close()
+    }
+
+    /// `launchArgument` read through the launch aliases, the aliases, every name a launch may give, and the destination
+    /// a name opens: a shape with aliases writes these in place of the plain `launchArgument`.
+    private static func launchNames(_ code: inout Code, _ shape: Shape) {
+        code.line("/// The destination a launch asks for with `-destination <name>`: how UI tests and screenshots open a page. A name in")
+        code.line("/// `aliases` opens the destination it names, and stays in the `destination` default for that page to read.")
+        code.scope("static var launchArgument: AppDestination? {") { code in
+            code.line("UserDefaults.standard.string(forKey: \"destination\").flatMap(AppDestination.init(launchName:))")
+        }
+        code.line()
+        code.line("/// The other names a launch may give, each opening its destination exactly as the destination's own name does: the")
+        code.line("/// page reads which with `UserDefaults.standard.string(forKey: \"destination\")` and opens its own inner state.")
+        code.scope("static let aliases: [(name: String, destination: AppDestination)] = [", close: "]") { code in
+            for alias in shape.aliases { code.line("(\"\(alias.name)\", .\(alias.target)),") }
+        }
+        code.line()
+        code.line("/// Every name a launch may give, the destinations' own and then the aliases: what UI tests and screenshots open.")
+        code.line("static var launchNames: [String] { allCases.map(\\.rawValue) + aliases.map(\\.name) }")
+        code.line()
+        code.line("/// The destination a launch name opens: the one of that name, or the one its alias names.")
+        code.scope("init?(launchName: String) {") { code in
+            code.scope("guard let destination = AppDestination(rawValue: launchName) ?? AppDestination.aliases.first(where: { $0.name == launchName })?.destination else {") { code in
+                code.line("return nil")
+            }
+            code.line("self = destination")
+        }
+        code.line()
     }
 
     /// Which destinations are tabs, which are sheets and which is the gate, and the launch rule past the gate.
@@ -282,6 +463,17 @@ enum NavigationTemplates {
             }
             code.line()
         }
+        if shape.isStacked {
+            code.line("/// What a launch that names the sheet puts up under it: the tab it goes up over, selected first, or the sheet it")
+            code.line("/// stacks on, put up first; nil for one that goes up over `.\(shape.opening)`. In use a sheet goes up over whatever is up.")
+            code.scope("var over: AppDestination? {") { code in
+                code.switchOn("self") { code in
+                    for sheet in shape.sheets { if let under = shape.over[sheet] { code.line("case .\(sheet): .\(under)") } }
+                    code.line("default: nil")
+                }
+            }
+            code.line()
+        }
         if let gate = shape.gate {
             let another = shape.opening
             code.line("/// The page shown full screen instead of the tabs while the gate holds.")
@@ -290,6 +482,11 @@ enum NavigationTemplates {
             code.line("/// Whether a launch that asks for `destination` opens past the gate. One that names any destination but the gate's")
             code.line("/// own (`-destination \(another)`) does, so UI tests and screenshots reach every screen with no sign-in and no tap;")
             code.line("/// with no `-destination`, or `-destination \(gate)`, the gate holds by its condition.")
+            if let alias = shape.gateAliases.first {
+                code.line("/// An alias opens what its destination opens: `-destination \(alias)` holds the gate as `-destination \(gate)` does.")
+            } else if let alias = shape.aliases.first {
+                code.line("/// An alias opens what its destination opens: `-destination \(alias.name)` opens past the gate as `-destination \(alias.target)` does.")
+            }
             code.scope("static func opensPastGate(_ destination: AppDestination?) -> Bool {") { code in
                 code.line("guard let destination else { return false }")
                 code.line("return destination != gate")

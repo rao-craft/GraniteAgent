@@ -5,7 +5,8 @@ import XCTest
 /// The output built and run as a person's app would be: a recipe app made call by call (a project, a kit, services
 /// with an expression and with a body from the model, every page layout, navigation and modals), its Loom layout
 /// checked, built and tested on macOS, built for the iOS simulator, its kit tested with SwiftPM; Seer's shell (a
-/// default tab, sheets and a sign-in gate) built and tested the same way; and a fresh Xcode project linked and built.
+/// default tab, sheets and a sign-in gate) built and tested the same way, and again with launch aliases, a sheet over a
+/// tab, a sheet over a sheet and the toast window; and a fresh Xcode project linked and built.
 /// Gated (`GRANITE_BUILD=1`): a build takes minutes and fetches Granite.
 final class GraniteBuildTests: XCTestCase {
     /// Where builds keep their packages between runs, under the process's temporary files.
@@ -91,6 +92,46 @@ final class GraniteBuildTests: XCTestCase {
         let iOS = try xcodebuild(["-project", "Seer.xcodeproj", "-scheme", "Seer-iOS", "-destination", "generic/platform=iOS Simulator", "build", "build-for-testing"],
                                  in: app, derived: derived)
         XCTAssertEqual(iOS.status, 0, Shell.digest(iOS.log))
+        if testRun?.totalFailureCount == 0 { try? FileManager.default.removeItem(at: derived) }
+    }
+
+    /// Seer's launch contract (2026-11-15): launch aliases (the gate's among them), Profile over the Models tab and
+    /// Settings stacked on Profile when a launch names them, a page that puts Wallet up, and the toasts in a window of
+    /// their own one level above alerts; and its shell as the original draws it: the tabs' images alone, the mark drawn
+    /// as the middle tab's image, the accent on the selected tab, a light impact on a tab change, the first-run layer
+    /// over the tabs. Built and its tests run on macOS (the alias, stacked-sheet and gate rules among them), built for
+    /// the iOS simulator, where the toast window, the tab bar and its feedback are compiled.
+    func testTheSeerShellWithAliasesSheetsOverSheetsTheDrawnTabAndTheToastWindowBuilds() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["GRANITE_BUILD"] == "1", "set GRANITE_BUILD=1 to build the output")
+        let folder = try Fixture.folder()
+        let app = folder.appendingPathComponent("Seer")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try await Fixture.call(Fixture.seerProject, in: app)
+        try await Fixture.call(Fixture.account, in: app)
+        try await Fixture.call(Fixture.signIn, in: app)
+        for page in Fixture.seerPages + [Fixture.seerSettings, Fixture.seerOnboarding] { try await Fixture.call(page, in: app) }
+        try FileManager.default.createDirectory(at: app.appendingPathComponent("Shared/Views"), withIntermediateDirectories: true)
+        try Fixture.seerMark.write(to: app.appendingPathComponent("Shared/Views/SeerMark.swift"), atomically: true, encoding: .utf8)
+        try await Fixture.call(Fixture.seerChrome, in: app)
+        try await Fixture.call(Fixture.seerWithWallet, in: app)
+        try await Fixture.call(Fixture.seerToasts, in: app)
+
+        let derived = folder.appendingPathComponent("DerivedData")
+        let mac = try xcodebuild(["-project", "Seer.xcodeproj", "-scheme", "Seer-macOS", "-destination", "platform=macOS", "CODE_SIGNING_ALLOWED=NO",
+                                  "-skip-testing:SeerUITests-macOS", "build", "test"], in: app, derived: derived, home: folder.appendingPathComponent("home"))
+        XCTAssertEqual(mac.status, 0, Shell.digest(mac.log))
+        XCTAssertTrue(mac.log.contains("** TEST SUCCEEDED **"), Shell.digest(mac.log))
+        for test in ["aLaunchThatAsksForASheetPutsUpWhatItGoesOver", "aSheetGoesUpOverWhateverIsUpAndClosesAlone", "aSheetIsNotATab",
+                     "anAliasOpensWhatItsDestinationOpens", "theGateHoldsOnAPlainLaunchAndOnItsOwnName", "aLaunchThatNamesAnotherDestinationOpensPastTheGate"] {
+            XCTAssertTrue(mac.log.contains("Test \(test)() passed"), test)
+        }
+        XCTAssertFalse(mac.log.contains(": warning: "), "the app builds without a warning: \(mac.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")
+        let iOS = try xcodebuild(["-project", "Seer.xcodeproj", "-scheme", "Seer-iOS", "-destination", "generic/platform=iOS Simulator", "build", "build-for-testing"],
+                                 in: app, derived: derived)
+        XCTAssertEqual(iOS.status, 0, Shell.digest(iOS.log))
+        let written = ["ModalHosting.swift", "PlatformNavigationView.swift", "AppDestination.swift", "LayoutService"]
+        XCTAssertFalse(iOS.log.components(separatedBy: "\n").contains { line in line.contains(": warning: ") && written.contains { line.contains($0) } },
+                       "the toast window and the navigation build for iOS without a warning: \(iOS.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")
         if testRun?.totalFailureCount == 0 { try? FileManager.default.removeItem(at: derived) }
     }
 

@@ -28,6 +28,8 @@ enum RootTemplates {
         /// The Swift condition that holds the gate, and the relays it reads.
         var condition: String
         var relays: [Relay]
+        /// The launch aliases of the gate's destination: each holds the gate as its own name does.
+        var aliases: [String] = []
     }
 
     static func component(_ root: String, hostsContent: Bool) -> String {
@@ -137,6 +139,9 @@ enum RootTemplates {
         code.line("/// A launch that names any destination but the gate's own (`-destination \(gate.tab)`) opens past the gate, on that")
         code.line("/// destination: how UI tests and screenshots check each screen with no sign-in and no tap. With no `-destination`, or")
         code.line("/// `-destination \(gate.name)`, the gate holds by its condition.")
+        if !gate.aliases.isEmpty {
+            code.line("/// So does a launch alias of the gate's destination: " + gate.aliases.map { "`-destination \($0)`" }.joined(separator: ", ") + ".")
+        }
         code.open("struct AppGate: View {")
         for relay in gate.relays { code.line("@Relay var \(relay.name): \(relay.type)") }
         code.line("@StateObject private var clock = RelayClock([" + gate.relays.map { "RelayClock.on(\($0.type).self)" }.joined(separator: ", ") + "])")

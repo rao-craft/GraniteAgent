@@ -46,12 +46,23 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         /// A blank page's body as Swift, written as given (parse-checked) instead of asked of the host's model: the
         /// view the app already has, filled from the relays and actions.
         public var body: String?
-        /// The app's destinations: `feed: Feed "Feed" house`, and after the symbol `default`, `sheet` or `gate`.
+        /// The app's destinations: `feed: Feed "Feed" house`, and after the symbol `default`, `sheet` (`over` a tab or a
+        /// sheet) or `gate`; a launch alias `auth.signup -> auth`.
         public var destinations: [String]?
         /// What holds navigation's gate, as a Swift condition over a relay's state: `account.state.session == nil`.
         public var gate: String?
         /// How the app moves between its destinations.
         public var style: GraniteStyle?
+        /// What a tab bar item shows: its image over its title, or its image alone.
+        public var tabBar: GraniteTabBar?
+        /// The colour the tab bar's selected item takes, a Swift expression: `Color.accent`.
+        public var tint: String?
+        /// The impact a person feels when the tab changes.
+        public var tabFeedback: GraniteFeedback?
+        /// Views drawn over the tabs, bottom to top, under every sheet: a first-run layer, `Onboarding`.
+        public var overlays: [String]?
+        /// Where modals shows its toasts: over the root view, or on iOS in a window of their own above alerts.
+        public var toasts: GraniteToasts?
         /// The root page; `Home` when left out.
         public var root: String?
         /// Remote packages the app links, pinned: `https://github.com/kean/Nuke@<revision> Nuke NukeUI`.
@@ -70,19 +81,22 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         public init(make: GraniteMake, name: String? = nil, bundleId: String? = nil, team: String? = nil, platforms: [String]? = nil, type: String? = nil,
                     into: String? = nil, state: [String]? = nil, events: [String]? = nil, relays: [String]? = nil,
                     layout: GraniteLayout? = nil, shows: [String]? = nil, actions: [String]? = nil, views: [String]? = nil,
-                    body: String? = nil, destinations: [String]? = nil, gate: String? = nil, style: GraniteStyle? = nil, root: String? = nil,
-                    packages: [String]? = nil, imports: [String]? = nil, persist: Bool? = nil, notes: String? = nil, rounds: Int? = nil,
-                    directory: String? = nil) {
+                    body: String? = nil, destinations: [String]? = nil, gate: String? = nil, style: GraniteStyle? = nil,
+                    tabBar: GraniteTabBar? = nil, tint: String? = nil, tabFeedback: GraniteFeedback? = nil, overlays: [String]? = nil, toasts: GraniteToasts? = nil,
+                    root: String? = nil, packages: [String]? = nil, imports: [String]? = nil, persist: Bool? = nil, notes: String? = nil,
+                    rounds: Int? = nil, directory: String? = nil) {
             self.make = make; self.name = name; self.bundleId = bundleId; self.team = team; self.platforms = platforms; self.type = type; self.into = into
             self.state = state; self.events = events; self.relays = relays; self.layout = layout; self.shows = shows; self.body = body
-            self.actions = actions; self.views = views; self.destinations = destinations; self.gate = gate; self.style = style; self.root = root
+            self.actions = actions; self.views = views; self.destinations = destinations; self.gate = gate; self.style = style
+            self.tabBar = tabBar; self.tint = tint; self.tabFeedback = tabFeedback; self.overlays = overlays; self.toasts = toasts
+            self.root = root
             self.packages = packages; self.imports = imports; self.persist = persist; self.notes = notes; self.rounds = rounds
             self.directory = directory
         }
 
         private enum CodingKeys: String, CodingKey, CaseIterable {
             case make, name, bundleId, team, platforms, type, into, state, events, relays, layout, shows, actions, views, body, destinations
-            case gate, style, root, packages, imports, persist, notes, rounds, directory
+            case gate, style, tabBar, tint, tabFeedback, overlays, toasts, root, packages, imports, persist, notes, rounds, directory
         }
 
         /// Any key a call carries, to find the ones that are not fields.
@@ -98,6 +112,8 @@ public struct GraniteAppAgent: GraniteAgentPackage {
             "endpoints": "events", "endpoint": "events", "reducers": "events", "work": "events", "methods": "events",
             "fields": "state", "properties": "state", "entities": "state",
             "routes": "destinations", "tabs": "destinations", "sheets": "destinations", "default": "destinations", "condition": "gate",
+            "aliases": "destinations", "over": "destinations", "toast": "toasts",
+            "overlay": "overlays", "layers": "overlays", "tabLabels": "tabBar", "tabTitles": "tabBar", "tabHaptics": "tabFeedback",
             "subviews": "views", "rows": "shows", "items": "shows",
             "bundle": "bundleId", "bundleID": "bundleId", "folder": "into", "path": "into", "kind": "make",
             "deploymentTarget": "platforms", "deployment": "platforms", "minimumOS": "platforms",
@@ -139,6 +155,11 @@ public struct GraniteAppAgent: GraniteAgentPackage {
             destinations = try Self.lines(c, .destinations)
             gate = try c.decodeIfPresent(String.self, forKey: .gate)
             style = try c.decodeIfPresent(GraniteStyle.self, forKey: .style)
+            tabBar = try c.decodeIfPresent(GraniteTabBar.self, forKey: .tabBar)
+            tint = try c.decodeIfPresent(String.self, forKey: .tint)
+            tabFeedback = try c.decodeIfPresent(GraniteFeedback.self, forKey: .tabFeedback)
+            overlays = try Self.lines(c, .overlays)
+            toasts = try c.decodeIfPresent(GraniteToasts.self, forKey: .toasts)
             root = try c.decodeIfPresent(String.self, forKey: .root)
             packages = try Self.lines(c, .packages)
             imports = try Self.lines(c, .imports)
@@ -157,7 +178,8 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         /// the pages. The other fields already say it: only navigation has destinations, only a service has events,
         /// only a page has a layout, shows, actions, views or a body.
         static func make(by keys: Set<String>) throws -> GraniteMake {
-            if keys.contains("destinations") { return .navigation }
+            if !keys.isDisjoint(with: ["destinations", "tabBar", "tabFeedback", "overlays"]) { return .navigation }
+            if keys.contains("toasts") { return .modals }
             if keys.contains("events") { return .service }
             if !keys.isDisjoint(with: ["layout", "shows", "actions", "views", "body"]) { return .component }
             if !keys.isDisjoint(with: ["bundleId", "team", "platforms"]) { return .project }
@@ -212,9 +234,14 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         "shows": "what a page draws: `items = feed.state.posts`, `item = …`, `selection = feed.state.selected`, `title = \"Feed\"`, `empty = \"No posts yet\"`; a row of a form `\"Section/Label\" = config.state.field`",
         "actions": "what a page does: `refresh = try await feed.load(page: 1)`, `more = …`, `open(post Post) = …`, `compose \"New Post\" square.and.pencil = …`",
         "views": "a page's subviews: `row(post Post, vote (Bool) -> Void) \"title, author and score, with a vote\"`; a closure is an action the view sends up with `bubble`, routed by the page to the action of its name; a description is what the host's model writes the body from",
-        "destinations": "the app's places, one a line: `feed: Feed \"Feed\" house`; after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `gate` shows it instead of the tabs while `gate` holds; `| Detail` names the view beside it in the split style",
+        "destinations": "the app's places, one a line: `feed: Feed \"Feed\" house`, or in the symbol's place a view the app has drawn as the tab's image (`seer: Seer \"Seer\" SeerMark().frame(width: 30, height: 30)`); after the symbol, `default` opens the app on it (else the first), `sheet` puts it in a sheet over the tabs (`layout.present(.wallet)`), `sheet over models` or `sheet over profile` a sheet a launch naming it puts up over that tab, or stacked on that sheet, `gate` shows it instead of the tabs while `gate` holds; `| Detail` names the view beside it in the split style. A line `auth.signup -> auth` is a launch alias, any name with dots: `-destination auth.signup` opens what `-destination auth` opens (the gate's alias holds the gate, any other opens past it) and stays readable in the `destination` default",
         "gate": "navigation's gate: a Swift condition over a relay's state, the relay named in `relays` (`account.state.session == nil`, `account: AccountService`); while it holds, the destination marked `gate` is shown full screen instead of the tabs, and a launch with `-destination <another>` opens past it",
         "style": "how the app moves between destinations: adaptive (tabs on iPhone, a sidebar on iPad and Mac), tabs, sidebar, split",
+        "tabBar": "what a tab bar item shows: labels (its image over its title; when left out) or icons (its image alone, an empty title, as `Tab(\"\", …)`)",
+        "tint": "the colour of the tab bar's selected item, a Swift colour: `Color.accent`; the app's accent colour when left out",
+        "tabFeedback": "the impact felt when the tab changes on iPhone: light, medium, heavy, soft, rigid; none when left out",
+        "overlays": "views navigation draws over the tabs, bottom to top, under every sheet: a page the app has, `Onboarding` (a first-run layer that takes touches only where it draws)",
+        "toasts": "where modals shows its toasts: overlay (over the root view; when left out) or window (on iOS in a window of their own one level above alerts, `.alert + 1`, over every sheet and alert, a touch elsewhere passing through, the styles in circle symbols; the Mac keeps the overlay)",
         "root": "the root page; Home when left out",
         "packages": "remote packages the app links, pinned: `https://github.com/kean/Nuke@<40-hex revision> Nuke NukeUI`",
         "imports": "modules the files import beside Foundation, SwiftUI and Granite; a local package's are found on their own",
@@ -232,9 +259,9 @@ public struct GraniteAppAgent: GraniteAgentPackage {
 
         component: {"make": "component", "type": "RecipeList", "layout": "list", "relays": ["recipes: RecipesService"], "shows": ["items = recipes.state.recipes", "title = \"Recipes\"", "empty = \"No recipes yet\""], "actions": ["refresh = try await recipes.load(page: 1)", "more = try await recipes.more(page: 2)", "open(recipe Recipe) = recipes.set(.favorite(recipe.id))", "favor(recipe Recipe) \"Favorite\" star = try await recipes.favor(recipe: recipe)"], "views": ["row(recipe Recipe, favor () -> Void) \"photo, title and minutes, with a heart\""]} writes the page. Layouts: list, grid and search show `items` (search adds `query`); detail shows `item`; threePane shows `items` and `selection`, and a `sidebar`; form, settings and compose show rows `"Section/Label" = recipes.state.field` or `= state.field`, each a control by its type; tabs shows `"Title" = SomeView()` a tab; blank is written by the host's model: a page that shows a view the app already has (a kit's `FeedView(…)`) is `layout: blank` with its relays and actions, and either the body itself in `body` (written as given) or the view and how to fill it named in `notes`. Actions named refresh, more, open, submit and search do what they say; one that takes an item sits in its row's menu; the others are toolbar buttons (`name "Words" sf.symbol = statements`). A view's closure is an action it sends up with `bubble`; the page routes it, where it draws the view, to the action of its name. The page's own state is `state` lines (`query String = ""`); `let recipe Recipe` is an input it is made with.
 
-        navigation: {"make": "navigation", "destinations": ["recipes: RecipeList \"Recipes\" book", "search: RecipeSearch \"Search\" magnifyingglass", "settings: Settings \"Settings\" gearshape"], "style": "adaptive"} writes the destinations, tabs on iPhone and a sidebar on iPad and the Mac, a layout service, routes and Device, and shows them once the app is ready. The pages must exist first. After a symbol, `default` opens the app on that destination, `sheet` puts it in a sheet over the tabs (a page opens it with `layout.present(.settings)`), and `gate` shows it instead of the tabs while the `gate` condition holds: `"gate": "account.state.session == nil"` with `"relays": ["account: AccountService"]`.
+        navigation: {"make": "navigation", "destinations": ["recipes: RecipeList \"Recipes\" book", "search: RecipeSearch \"Search\" magnifyingglass", "settings: Settings \"Settings\" gearshape"], "style": "adaptive"} writes the destinations, tabs on iPhone and a sidebar on iPad and the Mac, a layout service, routes and Device, and shows them once the app is ready. The pages must exist first. After a symbol, `default` opens the app on that destination, `sheet` puts it in a sheet over the tabs (a page opens it with `layout.present(.settings)`), and `gate` shows it instead of the tabs while the `gate` condition holds: `"gate": "account.state.session == nil"` with `"relays": ["account: AccountService"]`. A sheet line may end `sheet over models` (a launch that names it selects that tab first) or `sheet over profile` (it goes up stacked on that sheet); in use a sheet goes up over whatever is up. A line `auth.signup -> auth` is a launch alias: `-destination auth.signup` opens what `-destination auth` opens, and the page reads the name itself. In the symbol's place a line may name a view the app has, drawn once as the tab's image in its own colours (`seer: Seer \"Seer\" SeerMark().frame(width: 30, height: 30) default`); `"tabBar": "icons"` drops the tabs' titles, `"tint": "Color.accent"` colours the selected tab, `"tabFeedback": "light"` gives a light impact on a tab change, and `"overlays": ["Onboarding"]` draws a page over the tabs, under every sheet.
 
-        modals: {"make": "modals"} writes ModalService and its host: `modals.sheet(id: "compose", detents: [.medium, .large]) { … }`, `modals.alert(…)`, `modals.toast("Saved", style: .success)`, `modals.travel(id: "draft", title: "Draft") { … }` (a panel that stays while you browse), and on the Mac `modals.window(id:title:size:) { … }`.
+        modals: {"make": "modals"} writes ModalService and its host: `modals.sheet(id: "compose", detents: [.medium, .large]) { … }`, `modals.alert(…)`, `modals.toast("Saved", style: .success)`, `modals.travel(id: "draft", title: "Draft") { … }` (a panel that stays while you browse), and on the Mac `modals.window(id:title:size:) { … }`. `"toasts": "window"` shows the toasts on iOS in a window of their own above alerts, over every sheet.
 
         package: {"make": "package", "name": "RecipeKit"} writes a kit in Packages/RecipeKit and links it into the app; `make: service` with `"into": "Packages/RecipeKit"` puts a public service in it.
 

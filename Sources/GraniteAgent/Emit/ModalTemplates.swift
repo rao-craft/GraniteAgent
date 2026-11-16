@@ -595,6 +595,221 @@ enum ModalTemplates {
 
         """
 
+    /// The toast view of `toasts: window`, a card as wide as the screen: the style's symbol at 22 beside the message, on
+    /// the ultra-thin material, rounded at 24, with a shadow, the four styles in the system's circle symbols and
+    /// colours (as Seer's original draws its toast, Shared/Views/Toast/ToastView.swift).
+    static let windowToastView = """
+        import SwiftUI
+
+        /// A message over the app for a few seconds, in the toasts' own window: a card as wide as the screen; a tap puts
+        /// it away.
+        struct ModalToastView: View {
+            let toast: ModalToast
+            var dismiss: () -> Void
+
+            var body: some View {
+                HStack(spacing: 12) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Text(toast.message)
+                        .font(.headline.weight(.regular))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                .padding(.horizontal, 16)
+                .onTapGesture(perform: dismiss)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint(Text("Puts the message away"))
+            }
+
+            private var symbol: String {
+                switch toast.style {
+                case .info: "info.circle.fill"
+                case .success: "checkmark.circle.fill"
+                case .warning: "exclamationmark.triangle.fill"
+                case .error: "xmark.circle.fill"
+                }
+            }
+
+            private var tint: Color {
+                switch toast.style {
+                case .info: .blue
+                case .success: .green
+                case .warning: .orange
+                case .error: .red
+                }
+            }
+        }
+
+        """
+
+    /// The host of `toasts: window`: on iOS the toasts in a window of their own over the scene, one level above alerts,
+    /// so a toast shows over every sheet and alert and a touch anywhere but on a toast passes through; the Mac keeps
+    /// them over the root view.
+    static let windowHosting = """
+        import Granite
+        import SwiftUI
+        #if os(iOS)
+        import UIKit
+        #endif
+
+        extension View {
+            /// Hosts the app's sheets, alerts, toasts and travelling panels over this view. The root view applies it once.
+            func modalHosted() -> some View {
+                modifier(ModalHosting())
+            }
+        }
+
+        /// What ModalService holds, presented over the view it is applied to; on iOS its toasts in a window of their own,
+        /// one level above alerts, so a toast shows over every sheet and alert.
+        struct ModalHosting: ViewModifier {
+            @Relay var modals: ModalService
+            @StateObject private var clock = RelayClock([RelayClock.on(ModalService.self)])
+
+            func body(content: Content) -> some View {
+                content
+                    .modifier(ModalSheetHost(level: 0))
+                    .modifier(ModalAlertHost())
+                    #if os(iOS)
+                    .background(ModalToastAnchor())
+                    #else
+                    .overlay(alignment: .top) {
+                        ModalToastStack(toasts: modals.state.toasts) { modals.set(.toastExpired($0.id)) }
+                    }
+                    #endif
+                    .overlay(alignment: .bottomTrailing) {
+                        VStack(alignment: .trailing, spacing: 8) {
+                            ForEach(modals.state.panels) { panel in
+                                ModalPanelView(panel: panel, content: ModalService.views.get(ModalService.panelKey(panel.id)),
+                                               minimize: { modals.minimize(panel.id) },
+                                               restore: { modals.restore(panel.id) },
+                                               close: { modals.close(panel.id) })
+                            }
+                        }
+                        .padding()
+                        .animation(.spring(duration: 0.3), value: modals.state.panels)
+                    }
+            }
+        }
+
+        /// The toasts on screen, the newest last, each sliding in from the top on a spring that settles in 0.4 s; a tap
+        /// puts one away.
+        struct ModalToastStack: View {
+            let toasts: [ModalToast]
+            var dismiss: (ModalToast) -> Void
+
+            var body: some View {
+                VStack(spacing: 8) {
+                    ForEach(toasts) { toast in
+                        ModalToastView(toast: toast) { dismiss(toast) }
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .padding(.top, 8)
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: toasts)
+            }
+        }
+
+        #if os(iOS)
+        /// The toasts' own window over the app's scene, one level above alerts: a toast shows over every sheet and alert,
+        /// and a touch anywhere but on a toast passes through to the app below. It never becomes the key window.
+        final class ModalToastWindow: UIWindow {
+            /// Where the toasts are, in the window's space: the one place it takes a touch.
+            var toastFrame: CGRect = .zero
+
+            /// The toast window over each scene, made once and kept while the app runs.
+            private static var windows: [ObjectIdentifier: ModalToastWindow] = [:]
+
+            override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+                toastFrame.contains(point)
+            }
+
+            /// The toast window over `scene`, made the first time it is asked for.
+            static func install(over scene: UIWindowScene) -> ModalToastWindow {
+                if let window = windows[ObjectIdentifier(scene)] { return window }
+                let window = ModalToastWindow(windowScene: scene)
+                window.windowLevel = .alert + 1
+                window.backgroundColor = .clear
+                let host = UIHostingController(rootView: ModalToastLayer(window: window))
+                host.view.backgroundColor = .clear
+                window.rootViewController = host
+                window.isHidden = false
+                windows[ObjectIdentifier(scene)] = window
+                return window
+            }
+        }
+
+        /// The toast window's content: the toasts ModalService holds at its top, telling the window where they are.
+        private struct ModalToastLayer: View {
+            @Relay var modals: ModalService
+            @StateObject private var clock = RelayClock([RelayClock.on(ModalService.self)])
+            private weak var window: ModalToastWindow?
+
+            init(window: ModalToastWindow) {
+                self.window = window
+            }
+
+            var body: some View {
+                ModalToastStack(toasts: modals.state.toasts) { modals.set(.toastExpired($0.id)) }
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear
+                                .onChange(of: proxy.frame(in: .global), initial: true) { _, frame in
+                                    window?.toastFrame = frame
+                                }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+        }
+
+        /// Under the root view: once it is in a window, gives that window's scene its toast window, in the root's
+        /// appearance.
+        private struct ModalToastAnchor: UIViewRepresentable {
+            func makeUIView(context: Context) -> ModalToastAnchorView {
+                ModalToastAnchorView()
+            }
+
+            func updateUIView(_ view: ModalToastAnchorView, context: Context) {
+                view.style = context.environment.colorScheme == .dark ? .dark : .light
+            }
+        }
+
+        private final class ModalToastAnchorView: UIView {
+            /// The root's appearance, which the toast window takes.
+            var style: UIUserInterfaceStyle = .unspecified {
+                didSet { toasts?.overrideUserInterfaceStyle = style }
+            }
+            private weak var toasts: ModalToastWindow?
+
+            override init(frame: CGRect) {
+                super.init(frame: frame)
+                isUserInteractionEnabled = false
+            }
+
+            required init?(coder: NSCoder) {
+                fatalError("init(coder:) is not used")
+            }
+
+            override func didMoveToWindow() {
+                super.didMoveToWindow()
+                guard let scene = window?.windowScene else { return }
+                toasts = ModalToastWindow.install(over: scene)
+                toasts?.overrideUserInterfaceStyle = style
+            }
+        }
+        #endif
+
+        """
+
     static func tests(module: String) -> String {
         """
         import Foundation

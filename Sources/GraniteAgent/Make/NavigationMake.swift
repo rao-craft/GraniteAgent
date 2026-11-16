@@ -5,6 +5,11 @@
 //  PIN:  A GATE IS HELD BY SOMETHING REAL. A destination marked `gate` comes with `gate`, a condition over the state of
 //        a relay the project has, and each without the other is refused: an app that shows Sign In over nothing, or
 //        holds a condition with no page to show, is never written.
+//  PIN:  A LAUNCH NAME OPENS ONE PLACE. An alias (`auth.signup -> auth`) opens a destination exactly as its own name
+//        does, so a name that is a destination and an alias, an alias named twice, one that names nothing and a cycle
+//        are refused; so is a sheet `over` nothing, over the gate, over itself, or over a sheet that goes up over it.
+//  PIN:  WHAT IS DRAWN OVER THE TABS IS THE APP'S. A view drawn as a tab's image and an overlay over the tabs are views
+//        the project has; one it does not is refused, as a destination's page is.
 
 import Foundation
 
@@ -20,8 +25,13 @@ struct NavigationMake {
         let index = ProjectIndex(root: workspace.root)
         let layout = AppLayout.detect(workspace)
         var destinations: [Destination] = []
+        var aliases: [LaunchAlias] = []
         for line in input.destinations ?? [] where !line.trimmingCharacters(in: .whitespaces).isEmpty {
             do {
+                if let alias = try DestinationLine.alias(line) {
+                    aliases.append(alias)
+                    continue
+                }
                 let destination = try DestinationLine.parse(line)
                 if destinations.contains(where: { $0.name == destination.name }) {
                     problems.append("the destination `\(destination.name)` is named twice")
@@ -38,7 +48,24 @@ struct NavigationMake {
                                         + "(`make: component`, `type: \(page)`, `layout: blank`, `body: \(type)(…)` filled from its relays) and name that page here")
                     }
                 }
+                if let drawn = destination.drawnType, drawn != "Image", !index.declared.contains(drawn) {
+                    problems.append("`\(drawn)` is not in the project: the view drawn as `\(destination.name)`'s image is one the app has "
+                                    + "(its mark, or a view of its own), or `Image(\"name\")` for an image in its assets")
+                }
                 destinations.append(destination)
+            } catch { problems.append("\(error)") }
+        }
+        var overlays: [String] = []
+        for line in input.overlays ?? [] where !line.trimmingCharacters(in: .whitespaces).isEmpty {
+            do {
+                let (call, type) = try DestinationLine.viewCall(line.trimmingCharacters(in: .whitespaces), in: line)
+                if !index.declared.contains(type) {
+                    problems.append("the overlay `\(type)` is not in the project: make the page first (`make: component`, `type: \(type)`)")
+                } else if call == "\(type)()", index.components[type] == nil, Self.needsArguments(type, index: index) {
+                    problems.append("the overlay `\(type)` is a view that needs values to be made: make a page that shows it "
+                                    + "(`make: component`, `layout: blank`, `body: \(type)(…)`) and name that page here")
+                }
+                overlays.append(call)
             } catch { problems.append("\(error)") }
         }
         if destinations.isEmpty { problems.append("name the app's destinations, one a line: `feed: Feed \"Feed\" house`") }
@@ -53,6 +80,8 @@ struct NavigationMake {
         if !destinations.isEmpty, !destinations.contains(where: { $0.place == .tab }) {
             problems.append("every destination is a sheet or the gate: at least one is a tab, which the sheets go up over and the gate gives way to")
         }
+        let resolved = Self.resolve(aliases, destinations: destinations, problems: &problems)
+        let overNotes = Self.readOver(&destinations, aliases: resolved, problems: &problems)
         let gate = readGate(gates.first, index: index, problems: &problems)
         let style = input.style ?? .adaptive
         let root = input.root?.trimmingCharacters(in: .whitespaces) ?? Self.rootPage(layout) ?? "Home"
@@ -69,8 +98,13 @@ struct NavigationMake {
 
         var plan = Plan()
         let title = workspace.appName ?? root
-        let shape = NavigationTemplates.Shape(destinations)
-        plan.write(layout.utility.appendingPathComponent("AppDestination.swift"), NavigationTemplates.destinations(destinations, split: style == .split))
+        var shape = NavigationTemplates.Shape(destinations, aliases: resolved)
+        let tint = input.tint.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
+        shape.iconsOnly = input.tabBar == .icons
+        shape.tint = tint
+        shape.feedback = input.tabFeedback?.sensory
+        shape.overlays = overlays
+        plan.write(layout.utility.appendingPathComponent("AppDestination.swift"), NavigationTemplates.destinations(destinations, split: style == .split, aliases: resolved))
         if layout.isLoom {
             plan.write(layout.ios.appendingPathComponent("PlatformNavigationView.swift"), NavigationTemplates.iOS(style: style, appTitle: title, shape: shape))
             plan.write(layout.macos.appendingPathComponent("PlatformNavigationView.swift"), NavigationTemplates.macOS(style: style, appTitle: title, shape: shape))
@@ -91,8 +125,10 @@ struct NavigationMake {
         for (path, text) in NavigationTemplates.layoutService(app: workspace.appName ?? "app", first: first, shape: shape) {
             plan.write(layout.services.appendingPathComponent("LayoutService/\(path)"), text)
         }
-        let held = gate.map { RootTemplates.Gate(name: SwiftName.member($0.destination.name), title: $0.destination.title, tab: first,
-                                                 condition: $0.condition, relays: $0.relays) }
+        let held = gate.map { gate in
+            RootTemplates.Gate(name: SwiftName.member(gate.destination.name), title: gate.destination.title, tab: first, condition: gate.condition,
+                               relays: gate.relays, aliases: resolved.filter { $0.target == gate.destination.name }.map(\.name))
+        }
         plan.write(rootView, RootTemplates.view(root, ready: held.map { .gated($0) } ?? .navigation))
         if let (folder, module) = try workspace.unitTests() {
             // Going somewhere is to another tab: the second destination, or with a default, sheets or a gate the
@@ -124,16 +160,144 @@ struct NavigationMake {
         } else {
             plan.notes.append("the selected destination persists in LayoutService; a menu or a page moves the app with `layout.select(.\(first))`")
         }
-        if let sheet = shape.sheets.first {
+        if let sheet = shape.sheets.first, !shape.isStacked {
             plan.notes.append(shape.sheets.map { "`\($0)`" }.joined(separator: ", ") + (shape.sheets.count == 1 ? " is a sheet" : " are sheets")
                               + " over the tabs, at the large detent with a close button: a page opens one with `layout.present(.\(sheet))`, "
                               + "and `-destination \(sheet)` opens `\(first)` with it up")
+        } else if let sheet = shape.sheets.first {
+            plan.notes.append(shape.sheets.map { "`\($0)`" }.joined(separator: ", ") + (shape.sheets.count == 1 ? " is a sheet" : " are sheets")
+                              + ", at the large detent with a close button: a page puts one up over whatever is up, the tab or another sheet, with "
+                              + "`layout.present(.\(sheet))`, and its close button or a swipe takes down only it")
+            plan.notes += overNotes
+        }
+        if !resolved.isEmpty {
+            let pairs = Dictionary(grouping: resolved, by: \.target).sorted { a, b in
+                (destinations.firstIndex { $0.name == a.key } ?? 0) < (destinations.firstIndex { $0.name == b.key } ?? 0)
+            }
+            plan.notes.append("launch aliases: " + pairs.map { target, names in
+                names.map { "`\($0.name)`" }.joined(separator: ", ") + " open" + (names.count == 1 ? "s" : "") + " `\(target)`"
+                    + (target == gates.first?.name ? " (on the gate)" : "")
+            }.joined(separator: "; ") + ". Each opens exactly as its destination's own name does, and the name stays in the `destination` default, "
+                + "so the page reads it with `UserDefaults.standard.string(forKey: \"destination\")` and opens its own inner state; "
+                + "`AppDestination.launchNames` lists every name a launch may give")
         }
         if let gate {
             plan.notes.append("while `\(gate.condition)` holds, the root shows `\(gate.destination.name)` full screen instead of the tabs; "
                               + "a launch with `-destination` naming any other destination opens past it, to check that screen")
         }
+        for destination in destinations {
+            guard let drawn = destination.drawn else { continue }
+            plan.notes.append("`\(destination.name)`'s image is `\(drawn)`, drawn once at the screen's scale in its own colours "
+                              + "(`AppDestination.image(scale:)`), so the tab bar never tints it")
+        }
+        let hasTabBar = style == .adaptive || style == .tabs
+        if hasTabBar {
+            if shape.iconsOnly { plan.notes.append("the tab bar shows each tab's image alone, with an empty title as `Tab(\"\", …)` writes it") }
+            if let tint { plan.notes.append("the selected tab takes `\(tint)`") }
+            if let feedback = input.tabFeedback {
+                plan.notes.append("a tab change on iPhone gives a \(feedback.rawValue) impact (`.sensoryFeedback(\(feedback.sensory), trigger: layout.state.destination)`)")
+            }
+        } else if shape.iconsOnly || tint != nil || input.tabFeedback != nil {
+            plan.notes.append("`tabBar`, `tint` and `tabFeedback` dress a tab bar, and the \(style.rawValue) style has none, so they were left out")
+        }
+        if !overlays.isEmpty {
+            plan.notes.append(overlays.map { "`\($0)`" }.joined(separator: ", ") + (overlays.count == 1 ? " is" : " are")
+                              + " drawn over the tabs, under every sheet; an overlay reads `layout.state.destination` for the tab that is up, "
+                              + "and lets touches through where it draws nothing (`allowsHitTesting`)")
+        }
         return plan
+    }
+
+    /// Each alias with the destination it opens, read through any alias it names. A name that is also a destination,
+    /// an alias named twice, one that names neither a destination nor an alias, and a cycle are problems.
+    static func resolve(_ aliases: [LaunchAlias], destinations: [Destination], problems: inout [String]) -> [LaunchAlias] {
+        let names = destinations.map(\.name)
+        var unique: [LaunchAlias] = []
+        for alias in aliases {
+            if names.contains(alias.name) {
+                problems.append("`\(alias.name)` is a destination and an alias: a launch name opens one place, so give the alias a name of its own")
+            } else if unique.contains(where: { $0.name == alias.name }) {
+                problems.append("the alias `\(alias.name)` is named twice")
+            } else {
+                unique.append(alias)
+            }
+        }
+        let table = Dictionary(uniqueKeysWithValues: unique.map { ($0.name, $0.target) })
+        var resolved: [LaunchAlias] = []
+        var cycles: Set<[String]> = []
+        for alias in unique {
+            var walked = [alias.name]
+            var target = alias.target
+            while let next = table[target], !walked.contains(target) {
+                walked.append(target)
+                target = next
+            }
+            if let start = walked.firstIndex(of: target) {
+                let cycle = Array(walked[start...])
+                if cycles.insert(cycle.sorted()).inserted {
+                    problems.append("`" + (cycle + [target]).joined(separator: " -> ") + "` is a cycle: an alias opens a destination, so one of them names it")
+                }
+            } else if names.contains(target) {
+                resolved.append(LaunchAlias(name: alias.name, target: target))
+            } else if walked.count == 1 {
+                problems.append("`\(alias.name) -> \(alias.target)`: `\(alias.target)` is neither a destination nor an alias (the destinations are "
+                                + names.map { "`\($0)`" }.joined(separator: ", ") + ")")
+            }
+        }
+        return resolved
+    }
+
+    /// Each sheet's `over`, read through an alias to the destination it names, and a note for each launch that puts up
+    /// more than the sheet. One over no destination, over the gate, over itself, or over a sheet that goes up over it
+    /// is a problem.
+    static func readOver(_ destinations: inout [Destination], aliases: [LaunchAlias], problems: inout [String]) -> [String] {
+        var notes: [String] = []
+        for index in destinations.indices {
+            guard let over = destinations[index].over else { continue }
+            let name = destinations[index].name
+            let target = aliases.first { $0.name == over }?.target ?? over
+            guard let under = destinations.first(where: { $0.name == target }) else {
+                problems.append("`\(name)` goes up over `\(over)`, which is not a destination (the destinations are "
+                                + destinations.map { "`\($0.name)`" }.joined(separator: ", ") + ")")
+                continue
+            }
+            if under.place == .gate {
+                problems.append("`\(name)` goes up over `\(target)`, the gate: a sheet goes up over a tab or another sheet")
+            } else if target == name {
+                problems.append("`\(name)` goes up over itself: a sheet goes up over a tab or another sheet")
+            } else {
+                destinations[index].over = target
+                if target != over { notes.append("`\(name)` goes up over `\(target)`, the destination `\(over)` opens") }
+            }
+        }
+        var said: Set<[String]> = []
+        for destination in destinations where destination.over != nil {
+            var chain = [destination.name]
+            var next = destination.over
+            while let name = next, let under = destinations.first(where: { $0.name == name }), under.place == .sheet {
+                if let start = chain.firstIndex(of: name) {
+                    let cycle = Array(chain[start...])
+                    if said.insert(cycle.sorted()).inserted {
+                        problems.append("`" + (cycle + [name]).map { $0 }.joined(separator: "` over `") + "` is a cycle: one of them goes up over a tab")
+                    }
+                    chain = []
+                    break
+                }
+                chain.append(name)
+                next = under.over
+            }
+            if chain.count > 1 || (chain.count == 1 && destination.over != nil) {
+                let tab = next.flatMap { name in destinations.first { $0.name == name && $0.place == .tab }?.name }
+                let sheets = chain.reversed().map { "`\($0)`" }
+                if !chain.isEmpty, let tab {
+                    notes.append("`-destination \(destination.name)` selects `\(tab)`" + (sheets.count > 1 ? " and puts up " + sheets.joined(separator: ", then ") : " with `\(destination.name)` up")
+                                 + ", unanimated, as if the person had gone there")
+                } else if chain.count > 1 {
+                    notes.append("`-destination \(destination.name)` puts up " + sheets.joined(separator: ", then ") + ", unanimated, over the tab a plain launch opens on")
+                }
+            }
+        }
+        return notes
     }
 
     /// The gate's page, its condition and the relays the condition reads; nil when there is no gate. Each of the line

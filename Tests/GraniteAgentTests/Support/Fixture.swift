@@ -157,6 +157,55 @@ enum Fixture {
                        #"models: Models "Models" cpu"#, #"profile: Profile "Profile" person.crop.circle sheet"#, #"wallet: Wallet "Wallet" creditcard sheet"#],
         gate: "account.state.session == nil")
 
+    /// Seer's launch contract (2026-11-15): sub-destinations by alias, the gate's among them; Profile over the Models tab
+    /// and Settings stacked on Profile when a launch names them; Wallet over the default tab.
+    static let seerShell = GraniteAppAgent.Input(
+        make: .navigation, relays: ["account: AccountService"],
+        destinations: [#"auth: SignIn "Sign In" person gate"#, #"library: Library "Library" books.vertical.fill"#, #"seer: Seer "Seer" sparkles default"#,
+                       #"models: Models "Models" externaldrive.fill.badge.person.crop"#, #"profile: Profile "Profile" person.crop.circle sheet over models"#,
+                       #"settings: Settings "Settings" gearshape sheet over profile"#, #"wallet: Wallet "Wallet" creditcard sheet"#,
+                       "auth.signup -> auth", "auth.code -> auth", "void.reply -> seer", "settings.feedback -> settings", "model.edit -> models"],
+        gate: "account.state.session == nil")
+
+    /// The page Settings goes up in, for the shell above.
+    static let seerSettings = placeholderPage("Settings", symbol: "gearshape")
+
+    /// Seer's toasts, in a window of their own one level above alerts.
+    static let seerToasts = GraniteAppAgent.Input(make: .modals, toasts: .window)
+
+    /// Seer's shell as the original draws it (Components/Main/MainView.swift): the tabs' images alone, the mark drawn as
+    /// the middle tab's image at 30, the accent on the selected tab, a light impact on a tab change, and the first-run
+    /// layer over the tabs.
+    static var seerChrome: GraniteAppAgent.Input {
+        var input = seerShell
+        input.destinations = input.destinations?.map {
+            $0.replacingOccurrences(of: #""Seer" sparkles default"#, with: #""Seer" SeerMark().frame(width: 30, height: 30) default"#)
+        }
+        input.tabBar = .icons
+        input.tint = "Color.accentColor"
+        input.tabFeedback = .light
+        input.overlays = ["Onboarding"]
+        return input
+    }
+
+    /// The first-run layer the shell draws over the tabs, for the call above.
+    static let seerOnboarding = placeholderPage("Onboarding", symbol: "hand.wave")
+
+    /// A stand-in for the app's mark, drawn in code, for the call above: a disc with a bright bezel.
+    static let seerMark = """
+        import SwiftUI
+
+        /// A stand-in for the app's mark, drawn in code: a disc with a bright bezel.
+        struct SeerMark: View {
+            var body: some View {
+                Circle()
+                    .fill(.gray)
+                    .overlay(Circle().inset(by: 4).fill(.white.opacity(0.35)))
+            }
+        }
+
+        """
+
     /// The Seer page again, once the navigation is there, with a button that puts the wallet up.
     static let seerWithWallet = GraniteAppAgent.Input(
         make: .component, type: "Seer", relays: ["layout: LayoutService"], layout: .blank,

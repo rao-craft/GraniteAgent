@@ -99,6 +99,53 @@ then, once Seer, Models, Profile and The World are made with `layout.present(.wo
   reason (`LayoutService has no present`), as it should be
 - iOS simulator build of the Seer-iOS scheme: BUILD SUCCEEDED
 
+### Seer's launch contract and shell: aliases, sheets over a tab or a sheet, the drawn tab, the toast window
+
+*2026-11-15 · the suite and the gated build, no model*
+
+**The calls**, on a Seer made by the project, account, Sign In and placeholder-page calls (`Tests/GraniteAgentTests/Support/Fixture.swift`,
+`seerChrome` and `seerToasts`), with a stand-in `SeerMark` view in `Shared/Views`:
+
+```json
+{
+  "make": "navigation",
+  "destinations": [
+    "auth: SignIn \"Sign In\" person gate",
+    "library: Library \"Library\" books.vertical.fill",
+    "seer: Seer \"Seer\" SeerMark().frame(width: 30, height: 30) default",
+    "models: Models \"Models\" externaldrive.fill.badge.person.crop",
+    "profile: Profile \"Profile\" person.crop.circle sheet over models",
+    "settings: Settings \"Settings\" gearshape sheet over profile",
+    "wallet: Wallet \"Wallet\" creditcard sheet",
+    "auth.signup -> auth",
+    "auth.code -> auth",
+    "void.reply -> seer",
+    "settings.feedback -> settings",
+    "model.edit -> models"
+  ],
+  "gate": "account.state.session == nil",
+  "relays": ["account: AccountService"],
+  "tabBar": "icons",
+  "tint": "Color.accentColor",
+  "tabFeedback": "light",
+  "overlays": ["Onboarding"]
+}
+```
+
+```json
+{ "make": "modals", "toasts": "window" }
+```
+
+**Checks**:
+- `swift test`: 93 tests, 4 skipped (the gated builds), 0 failures; `SameBytesTests` holds twelve earlier navigation and
+  modals calls to the bytes they wrote at 4e59a5e
+- `GRANITE_BUILD=1 swift test --filter GraniteBuildTests`: 4 tests, 0 failures; the Seer shell above built and its tests
+  run on macOS (`anAliasOpensWhatItsDestinationOpens`, `aLaunchThatAsksForASheetPutsUpWhatItGoesOver`,
+  `aSheetGoesUpOverWhateverIsUpAndClosesAlone`, the gate's launch rules: passed), built for the iOS simulator with no
+  warning in the navigation or the toast window
+- not run on a simulator: the stacked sheets going up unanimated, the passthrough window and the drawn tab image are
+  compiled and unit-tested, not yet seen on a screen
+
 ## Combinations
 
 Level 3 of the regime (`TESTING-REGIME.md`): one prompt a turn chaining agents, run through Craft on a local model,

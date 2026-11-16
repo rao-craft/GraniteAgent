@@ -119,12 +119,63 @@ final class LineTests: XCTestCase {
         XCTAssertTrue(inbox.isDefault)
         XCTAssertEqual(inbox.detail, "Message()")
         XCTAssertEqual(try DestinationLine.parse(#"feed: Feed "Feed" house"#).place, .tab, "a line with no word is a tab, as before")
+        XCTAssertNil(try DestinationLine.parse(#"wallet: Wallet "Wallet" creditcard sheet"#).over)
+        let settings = try DestinationLine.parse(#"settings: Settings "Settings" gearshape sheet over profile"#)
+        XCTAssertEqual(settings.place, .sheet)
+        XCTAssertEqual(settings.over, "profile")
+        XCTAssertEqual(try DestinationLine.parse(#"contributions: Contributions "Contributions" person.2 over void.reply sheet"#).over, "void.reply",
+                       "`over` may come before `sheet`, and name an alias")
         for (line, reason) in [(#"feed: Feed "Feed" house later"#, "comes `default`, `sheet` or `gate`, not `later`"),
                                (#"feed: Feed "Feed" house sheet gate"#, "not both"),
                                (#"feed: Feed "Feed" house sheet default"#, "a sheet is not a tab"),
                                (#"feed: Feed "Feed" house gate default"#, "a gate is not a tab"),
-                               (#"feed: Feed "Feed" house default default"#, "`default` is said twice")] {
+                               (#"feed: Feed "Feed" house default default"#, "`default` is said twice"),
+                               (#"feed: Feed "Feed" house over models"#, "a tab is not a sheet: say `sheet over models`"),
+                               (#"auth: SignIn "Sign In" person gate over seer"#, "a gate is not a sheet"),
+                               (#"feed: Feed "Feed" house sheet over"#, "`over` names what the sheet goes up over"),
+                               (#"feed: Feed "Feed" house sheet over sheet"#, "`over` names what the sheet goes up over"),
+                               (#"feed: Feed "Feed" house sheet over a over b"#, "`over` is said twice"),
+                               (#"feed: Feed "Feed" house sheet over a/b"#, "`a/b` is not a destination's name")] {
             XCTAssertThrowsError(try DestinationLine.parse(line), line) { XCTAssertTrue("\($0)".contains(reason), "\(line) → \($0)") }
+        }
+    }
+
+    /// In the symbol's place a line may name a view the app has, drawn as the tab's image: a view made by a call, with
+    /// modifiers after it, or an image in the assets; anything else there is refused saying what goes there.
+    func testADestinationMayDrawAViewAsItsImage() throws {
+        let seer = try DestinationLine.parse(#"seer: Seer "Seer" SeerMark().frame(width: 30, height: 30) default"#)
+        XCTAssertEqual(seer.drawn, "SeerMark().frame(width: 30, height: 30)")
+        XCTAssertEqual(seer.drawnType, "SeerMark")
+        XCTAssertEqual(seer.symbol, "")
+        XCTAssertTrue(seer.isDefault)
+        let asset = try DestinationLine.parse(#"seer: Seer "Seer" Image("LogoMark") default"#)
+        XCTAssertEqual(asset.drawn, #"Image("LogoMark")"#)
+        XCTAssertEqual(asset.drawnType, "Image")
+        let sheet = try DestinationLine.parse(#"wallet: Wallet "Wallet" WalletGlyph(size: 30) sheet over models"#)
+        XCTAssertEqual(sheet.drawn, "WalletGlyph(size: 30)")
+        XCTAssertEqual(sheet.place, .sheet)
+        XCTAssertEqual(sheet.over, "models")
+        XCTAssertNil(try DestinationLine.parse(#"feed: Feed "Feed" house"#).drawn)
+        for line in [#"seer: Seer "Seer" SeerMark default"#, #"seer: Seer "Seer" SeerMark().frame(width: 30 default"#,
+                     #"seer: Seer "Seer" SeerMark().frame default"#, #"seer: Seer "Seer" SeerMark()frame() default"#] {
+            XCTAssertThrowsError(try DestinationLine.parse(line), line) { error in
+                XCTAssertTrue("\(error)".contains("is not a view drawn as the tab's image"), "\(line): \(error)")
+            }
+        }
+    }
+
+    /// A launch alias: another name a launch may give for a destination, dots allowed (`auth.signup -> auth`); a
+    /// destination line, even one whose view's arguments hold an arrow, is not one.
+    func testLaunchAliasLines() throws {
+        XCTAssertEqual(try DestinationLine.alias("auth.signup -> auth"), LaunchAlias(name: "auth.signup", target: "auth"))
+        XCTAssertEqual(try DestinationLine.alias("  settings.feedback->settings "), LaunchAlias(name: "settings.feedback", target: "settings"))
+        XCTAssertEqual(try DestinationLine.alias("model-edit -> model.page"), LaunchAlias(name: "model-edit", target: "model.page"))
+        XCTAssertNil(try DestinationLine.alias(#"feed: Feed "Feed" house"#))
+        XCTAssertNil(try DestinationLine.alias(#"feed: Feed(sort: { (a: Int) -> Bool in a > 0 }) "Feed" house"#))
+        for (line, reason) in [("-> auth", "a launch alias is `name -> destination`"), ("auth signup -> auth", "`auth signup` is not a name a launch gives"),
+                               ("auth.signup ->", "a launch alias is `name -> destination`"), ("auth.signup -> auth gate", "`auth gate` is not a destination's name"),
+                               (".signup -> auth", "is not a name a launch gives")] {
+            XCTAssertThrowsError(try DestinationLine.alias(line), line) { XCTAssertTrue("\($0)".contains(reason), "\(line) → \($0)") }
         }
     }
 

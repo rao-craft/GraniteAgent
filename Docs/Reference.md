@@ -33,6 +33,7 @@ the root that holds the relays.
 | `make` | required | `project`, `package`, `link`, `service`, `component`, `navigation` or `modals` |
 | `name` | project, package | the app's or the kit's name: `Recipes` |
 | `bundleId`, `team` | project | `com.example.<name>` when left out; the 10-character team id |
+| `platforms` | project | the lowest OS each app runs on, one a line: `iOS 26`, `macOS 26`; iOS 17 and macOS 14 when left out |
 | `type` | service, component | `Feed` makes `FeedService` (a service) or `Feed` (a page) |
 | `into` | optional | the folder, relative to the project; `Services/<Type>` and `Components/<Type>` when left out; a kit's folder puts a public service in the kit |
 | `state` | service, component | fields in the models syntax, one a line: `posts [Post] = []`, `selected String?`; a page's `let post Post` is an input |
@@ -40,8 +41,12 @@ the root that holds the relays.
 | `relays` | service, component, navigation | `feed: FeedService`, or `Feed`; navigation reads them only for its `gate` |
 | `layout` | component | `list`, `grid`, `detail`, `form`, `settings`, `search`, `compose`, `tabs`, `threePane`, `blank` |
 | `shows`, `actions`, `views` | component | what the page draws, does, and its subviews (below) |
-| `destinations`, `style` | navigation | `feed: Feed "Feed" house`, then `default`, `sheet` or `gate` when it is more than a tab (below); `adaptive`, `tabs`, `sidebar` or `split` |
+| `destinations`, `style` | navigation | `feed: Feed "Feed" house`, then `default`, `sheet` (`sheet over models`) or `gate` when it is more than a tab, and `auth.signup -> auth` for another name a launch may give (below); `adaptive`, `tabs`, `sidebar` or `split` |
 | `gate` | navigation | the condition over a relay's state that holds the gate: `account.state.session == nil`, its relay in `relays` |
+| `tabBar`, `tint` | navigation | `labels` when left out, `icons` for each tab's image alone (an empty title, as `Tab("", …)`); the selected tab's colour, a Swift colour (`Color.accent`), the accent colour when left out |
+| `tabFeedback` | navigation | the impact a tab change gives on iPhone: `light`, `medium`, `heavy`, `soft` or `rigid`; none when left out |
+| `overlays` | navigation | pages drawn over the tabs, bottom to top, under every sheet: `Onboarding` |
+| `toasts` | modals | `overlay` when left out; `window` shows the toasts on iOS in a window of their own at `.alert + 1`, over every sheet and alert |
 | `root` | project, link, navigation | the root page; `Home` when left out |
 | `packages` | project, package, link | pinned remote packages: `https://github.com/kean/Nuke@<revision> Nuke NukeUI` |
 | `imports` | service, component | modules to import; a local package's are found on their own |
@@ -69,11 +74,27 @@ feed: Feed "Feed" house | PostDetail       destinations: the detail after a bar 
 seer: Seer "Seer" sparkles default         default: a plain launch opens on it, not the first, every time
 wallet: Wallet "Wallet" creditcard sheet   sheet: over the tabs, not one of them; a page opens it with layout.present(.wallet)
 auth: SignIn "Sign In" person gate         gate: shown instead of the tabs while `gate` holds (one, with `gate`)
+profile: Profile "Profile" person sheet over models      over: a launch naming it selects that tab first
+settings: Settings "Settings" gearshape sheet over profile    or puts that sheet up first and this one on it
+auth.signup -> auth                        a launch alias: opens what `auth` opens; any name, dots allowed
+seer: Seer "Seer" SeerMark().frame(width: 30, height: 30) default    in the symbol's place, a view the app has, drawn as the tab's image
 ```
 
-Every destination opens from a launch with `-destination <name>`: a tab on it, a sheet up over the default tab. With
-a gate, a launch with no `-destination`, or with the gate's own name, holds by the condition; one naming any other
-destination opens past it, so a screen is checked with no sign-in and no tap.
+Every destination opens from a launch with `-destination <name>`: a tab on it, a sheet up over the default tab, or
+over what its `over` names, the sheets under it put up first, unanimated. With a gate, a launch with no
+`-destination`, or with the gate's own name, holds by the condition; one naming any other destination opens past it,
+so a screen is checked with no sign-in and no tap. An alias opens exactly what its destination opens (an alias of the
+gate holds the gate) and its name stays in the `destination` default, so the page reads
+`UserDefaults.standard.string(forKey: "destination")` to open its own inner state. With an `over` in the call, a sheet
+a page presents goes up over whatever is up and its close takes down only it. An alias naming nothing, a cycle, a
+name used twice, and `over` on a tab, over the gate or round a cycle are refused.
+
+A view in the symbol's place is drawn once, at the screen's scale, with `ImageRenderer`, and shown in its own colours
+(`.renderingMode(.original)`), so a medallion or a logo stays as drawn while the tab bar tints the other tabs; it must
+be a view the project has (or `Image("name")` from its assets), and the sidebar shows it the same way. With
+`tabBar: icons`, `tint`, `tabFeedback` and `overlays`, the root reads as `TabView(selection:) { … }.tint(Color.accent)
+.sensoryFeedback(.impact(weight: .light), trigger: layout.state.destination).overlay { Onboarding() }`; an overlay is a
+page the project has, and reads `layout.state.destination` for the tab that is up.
 
 A line it cannot read, a field that does not exist, a relay that would loop, a page the project does not have: the call
 is refused with every reason at once, and nothing is written.
@@ -85,8 +106,8 @@ is refused with every reason at once, and nothing is written.
 | project | `<Name>.xcodeproj` from Granite's template (objectVersion 77, synchronized Shared, Components, Services, iOS, macOS, Tests and UITests; an app, unit tests and UI tests per platform, the UI tests skipped in the schemes until turned on, since they need an interactive session to drive the app; Swift 5, iOS 17, macOS 14; Granite pinned at `7ff33526` with GraniteAgents), shared schemes, `@main` App and delegate, `AppCommands`, `AppRoot`, `EnvironmentService` and `ConfigService` with their Ops and tests, the `Home` page that boots the app, `modalHosted()`, the asset catalog |
 | service | the struct with its tickets, lane, `set` and `binding` helpers and a ticketed entry per event; its center (`TransientState`, or a persisted `GraniteState` that reads old files); `Set` with a case per field; a reducer per event that marks the start in `reduce` and works in `effect`; `Ops.apply`; Ops tests; a relay in the root |
 | component | `<Page>`, `+Center`, `+View` (loading, empty, an error banner with a retry, pull to refresh, load more, a context menu and swipe per item, a toolbar, the first load gated on `isLoaded`), `+Actions`, reducers when asked, and `Views/<Page>.<Role>View.swift` per subview |
-| navigation | `AppDestination`, `PlatformNavigationView` for iOS and macOS, `LayoutService`, `Routes` over Granite's router, `Device`, and the root page shown with them; with `sheet`, `AppDestination.tabs` and `isSheet`, a `sheet` in the layout with `present` and `closeSheet`, and the sheet host on both platforms; with `gate`, `AppGate` in the root page's view file, beside the root that shows it; `LayoutOpsTests` cover the default, a sheet and the gate's launch rule |
-| modals | `ModalService` (sheets with detents, alerts, toasts, travelling panels, Mac windows; state holds ids, a registry the views), its host views, and the real `modalHosted()` |
+| navigation | `AppDestination`, `PlatformNavigationView` for iOS and macOS, `LayoutService`, `Routes` over Granite's router, `Device`, and the root page shown with them; with `sheet`, `AppDestination.tabs` and `isSheet`, a `sheet` in the layout with `present` and `closeSheet`, and the sheet host on both platforms; with `gate`, `AppGate` in the root page's view file, beside the root that shows it; with `over`, `AppDestination.over`, a stack of `sheets` in the layout (`.sheet`, `.sheets`), a launch that puts up each sheet under the one it names, and a stacked sheet host on both platforms; with aliases, `AppDestination.aliases`, `launchNames` and `init?(launchName:)`, which `launchArgument` reads through; with a drawn view, `AppDestination.image(scale:)` over `ImageRenderer`; with `tabBar`, `tint`, `tabFeedback` and `overlays`, the tab items, `.tint`, `.sensoryFeedback` (iOS) and `.overlay` on the tab view; `LayoutOpsTests` cover the default, a sheet, the gate's launch rule, each alias and the stacked launch |
+| modals | `ModalService` (sheets with detents, alerts, toasts, travelling panels, Mac windows; state holds ids, a registry the views), its host views, and the real `modalHosted()`; with `toasts: window`, a passthrough `ModalToastWindow` at `.alert + 1` over the scene on iOS, holding `ModalToastStack`, each toast a card as wide as the screen (its symbol at 22, the ultra-thin material rounded at 24, a spring of 0.4 s), the overlay kept on the Mac |
 | package | `Package.swift`, `<Name>Root`, a test target; inside an app, `Packages/<Name>` linked into every app target |
 | link | Granite linked into every app target, Swift 5 on app targets that were on 6, the root, the boot and settings services and a root page written beside the app's code (file references and build files in a project of classic groups), and the root page mounted around the view the App showed |
 
@@ -117,5 +138,8 @@ need an interactive session to drive the app.
 swift test                     # the record, the schema, the lines, every make's files, the project file's edits
 GRANITE_BUILD=1 swift test     # a recipe app made call by call, built and tested on macOS, built for the iOS
                                # simulator, its kit tested; Seer's shell (a default tab, two sheets, a sign-in
-                               # gate) the same; a fresh Xcode project linked, built and tested
+                               # gate) the same, and again with launch aliases, a sheet over a tab, a sheet over
+                               # a sheet, the mark drawn as a tab's image, icon-only tabs, a tint, a tab change's
+                               # impact, the first-run layer and the toast window; a fresh Xcode project linked,
+                               # built and tested
 ```
