@@ -303,7 +303,13 @@ struct ComponentMake {
 
     static func relayMisuse(in text: String, relays: [Relay], index: ProjectIndex) -> [String] {
         var problems: [String] = []
-        for relay in relays {
+        // PIN: A NAME THE BODY BINDS ITSELF IS NOT THE RELAY (Seer R5, 2026-11-15). `if let account = account.state.account
+        // { Text(account.name) }` reads the entity it bound, and was refused as `account.name` on the relay five times,
+        // three of them bodies the model wrote itself, until the repeat guard ended the work with Profile unmade. Which
+        // `account.x` is which needs scopes this check does not read, so a relay whose name the body binds is left to
+        // the compiler.
+        let shadowed = Self.bound(in: text)
+        for relay in relays where !shadowed.contains(relay.name) {
             guard let service = index.services[relay.type] else { continue }
             let own: Set<String> = Set(service.entries).union(["set", "binding", "state", "isLoaded", "center", "preload", "restore"])
             var seen: Set<String> = []
@@ -331,6 +337,13 @@ struct ComponentMake {
         return problems
     }
 
+    /// Names the statements bind themselves: `let x`, `for x in`, a closure's `{ a, b in`; what strings hold is not read.
+    static func bound(in text: String) -> Set<String> {
+        let code = text.replacingOccurrences(of: #""(?:[^"\\]|\\.)*""#, with: "\"\"", options: .regularExpression)
+        return Set(code.matches(#"(?:let|var|for)\s+([a-z_][A-Za-z0-9_]*)"#)
+            + code.matches(#"\{\s*([A-Za-z0-9_,\s]+?)\s+in\b"#).flatMap { $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } })
+    }
+
     /// What an action can reach: the page's relays, its actions, its state and inputs, and the language's own words.
     static let actionWords: Set<String> = [
         "try", "await", "let", "var", "if", "guard", "else", "return", "self", "true", "false", "nil", "in", "case", "switch",
@@ -343,10 +356,7 @@ struct ComponentMake {
     /// and the app did not build.
     static func unseen(in text: String, relays: [Relay], actions: [String], names: [String], index: ProjectIndex) -> [String] {
         let code = text.replacingOccurrences(of: #""(?:[^"\\]|\\.)*""#, with: "\"\"", options: .regularExpression)
-        // Names the statements bind themselves: `let x`, `for x in`, a closure's `{ a, b in`.
-        let bound = code.matches(#"(?:let|var|for)\s+([a-z_][A-Za-z0-9_]*)"#)
-            + code.matches(#"\{\s*([A-Za-z0-9_,\s]+?)\s+in\b"#).flatMap { $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
-        let seen = Set(relays.map(\.name) + actions + names + bound).union(actionWords)
+        let seen = Set(relays.map(\.name) + actions + names).union(Self.bound(in: text)).union(actionWords)
         var problems: [String] = [], said: Set<String> = []
         for name in code.matches(#"(?<![\w.$])([a-z_][A-Za-z0-9_]*)\s*[(.]"#) where !seen.contains(name) && said.insert(name).inserted {
             let called = code.range(of: #"(?<![\w.$])"# + name + #"\s*\("#, options: .regularExpression) != nil

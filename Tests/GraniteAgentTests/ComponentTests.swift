@@ -260,6 +260,11 @@ final class ComponentTests: XCTestCase {
         index.types["Account"] = account
         let problems = ComponentMake.relayMisuse(in: "Text(account.name)", relays: [Relay(name: "account", type: "AccountService")], index: index)
         XCTAssertEqual(problems, ["`account.name` is a field of AccountService's `account` (Account?): read it as `account.state.account?.name`"])
+        // Seer R5: a body that binds the name itself reads what it bound, and is left to the compiler.
+        for shadowing in ["if let account = account.state.account { Text(account.name) }",
+                          "ForEach(accounts) { account in Text(account.name) }"] {
+            XCTAssertEqual(ComponentMake.relayMisuse(in: shadowing, relays: [Relay(name: "account", type: "AccountService")], index: index), [], shadowing)
+        }
     }
 
     /// An action reaches only what the page can see: a bare call to a service's work, or a name no relay holds, is refused
