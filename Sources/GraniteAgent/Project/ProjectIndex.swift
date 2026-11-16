@@ -341,6 +341,14 @@ struct ProjectIndex {
 }
 
 extension String {
+    /// Every capture of every match of `pattern`, one array per match.
+    func groups(_ pattern: String) -> [[String]] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return regex.matches(in: self, range: NSRange(startIndex..., in: self)).map { match in
+            (1..<max(match.numberOfRanges, 1)).map { Range(match.range(at: $0), in: self).map { String(self[$0]) } ?? "" }
+        }
+    }
+
     /// The first capture of every match of `pattern`.
     func matches(_ pattern: String) -> [String] {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }

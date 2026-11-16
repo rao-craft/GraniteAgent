@@ -211,6 +211,53 @@ final class ComponentTests: XCTestCase {
             XCTAssertTrue("\(error)".contains("the page's `body`: `reload()` is not one of the page's actions (it has `refresh()`)"), "\(error)")
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Components/Larder").path))
+        // Seer R5: and so is state the page does not have, read through a relay it does not hold or bound as `$state`.
+        var foreign = input
+        foreign.type = "Cellar"
+        foreign.body = "List(pantry.state.recipes) { recipe in\n    Text(recipe.title)\n}\n.searchable(text: $state.query)\n.refreshable { try? await refresh() }"
+        do {
+            try await Fixture.call(foreign, in: folder)
+            XCTFail("a body that reads state the page does not have is refused")
+        } catch {
+            let text = "\(error)"
+            XCTAssertTrue(text.contains("the page's `body`: `pantry.state.recipes`: `pantry` is not one of the page's relays; `recipes` is read as `recipes.state.recipes`"), text)
+            XCTAssertTrue(text.contains("the page's `body`: `$state.query`: a page has no `$state`"), text)
+        }
+    }
+
+    /// PIN (Seer R5, 2026-11-15): a body reads the state its page has: the relays it holds, and its own fields through
+    /// `state` or `_state`. A name the body binds itself, and `center`, are left to the compiler.
+    func testABodyReadsTheStateItsPageHas() {
+        var index = ProjectIndex()
+        var chat = ProjectIndex.ServiceInfo(name: "ChatService", file: URL(fileURLWithPath: "/tmp/ChatService.swift"))
+        chat.fields = [(name: "exchanges", type: "[Exchange]"), (name: "thinking", type: "Bool")]
+        index.services["ChatService"] = chat
+        var library = ProjectIndex.ServiceInfo(name: "LibraryService", file: URL(fileURLWithPath: "/tmp/LibraryService.swift"))
+        library.fields = [(name: "items", type: "[Item]")]
+        index.services["LibraryService"] = library
+        let draft = Field(name: "draft", type: .named("String"), defaultValue: "\"\"", key: nil, doc: nil)
+        let spec = ComponentSpec(type: "Void", layout: .blank, relays: [Relay(name: "chat", type: "ChatService")], fields: [draft],
+                                 shows: [], actions: [], views: [], index: index)
+        let rows: [(body: String, expected: [String])] = [
+            ("ForEach(library.state.exchanges) { Text($0.reply) }",
+             ["`library.state.exchanges`: `library` is not one of the page's relays; `exchanges` is read as `chat.state.exchanges`"]),
+            ("Text(\"\\(library.state.items.count)\")",
+             ["`library.state.items`: `library` is not one of the page's relays: add it to `relays` (`library: LibraryService`)"]),
+            ("Text(rooms.state.title)",
+             ["`rooms.state.title`: `rooms` is not one of the page's relays, and no service holds `title`: add the relay, or make the service first"]),
+            ("TextField(\"Ask\", text: $state.text)",
+             ["`$state.text`: a page has no `$state`; it binds its own state as `_state.text`, and its state has no `text` yet: add it to the call's `state` (`text Type = …`)"]),
+            ("TextField(\"Ask\", text: $state.draft)", ["`$state.draft`: a page has no `$state`; it binds its own state as `_state.draft`"]),
+            ("if state.thinking { ProgressView() }",
+             ["`state.thinking`: the page's state has no `thinking`; it is read as `chat.state.thinking` (its state holds `draft`)"]),
+            ("Text(_state.wrappedValue.mood)", []),
+            ("TextField(\"Ask\", text: _state.draft); ForEach(chat.state.exchanges) { e in Text(e.reply) }", []),
+            ("if let state = chat.state.exchanges.last { Text(state.reply) }", []),
+            ("ForEach(rooms) { room in Text(room.state.title) }", []),
+            ("Text(center.state.draft); Text(self.state.draft)", []),
+        ]
+        for row in rows { XCTAssertEqual(ComponentMake.stateReads(in: row.body, spec: spec), row.expected, row.body) }
+        XCTAssertEqual(ComponentMake.stateReads(in: "Text(shelf.state.title)", spec: spec, inputs: ["shelf"]), [], "an input is the page's own")
     }
 
     /// A body that makes a view no one has, or awaits work the page does not have, is asked for again with the reason

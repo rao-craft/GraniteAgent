@@ -181,7 +181,7 @@ struct ComponentMake {
                 throw GraniteError.refused(["the page's `body` does not parse: \(failure)"])
             }
             // The rule a body asked of the model is held to, for one given in the call too.
-            let unknown = Self.unknownNames(in: given, spec: spec, view: nil)
+            let unknown = Self.unknownNames(in: given, spec: spec, view: nil, inputs: inputs.map(\.name))
             if !unknown.isEmpty { throw GraniteError.refused(unknown.map { "the page's `body`: \($0)" }) }
             spec.bodies["content"] = given
         } else if layout == .blank, let asker {
@@ -192,7 +192,7 @@ struct ComponentMake {
                                                           var probe = spec
                                                           probe.bodies["content"] = body
                                                           return ComponentLayouts(emitter: ComponentEmitter(spec: probe, inputs: inputs)).view()
-                                                      }, check: { Self.unknownNames(in: $0, spec: spec, view: nil) })
+                                                      }, check: { Self.unknownNames(in: $0, spec: spec, view: nil, inputs: inputs.map(\.name)) })
             spec.bodies["content"] = body
             yield(.asked(type: type, rounds: rounds))
 
@@ -387,7 +387,7 @@ struct ComponentMake {
         return problems
     }
 
-    static func unknownNames(in body: String, spec: ComponentSpec, view: ViewSpec?) -> [String] {
+    static func unknownNames(in body: String, spec: ComponentSpec, view: ViewSpec?, inputs: [String] = []) -> [String] {
         var problems = Self.relayMisuse(in: body, relays: spec.relays, index: spec.index)
         // The app's types, and what this call makes: the page and its subviews.
         let declared = spec.index.declared.union(spec.index.shapes.keys).union(spec.views.map { spec.viewType($0) }).union([spec.type])
@@ -405,6 +405,62 @@ struct ComponentMake {
             if !awaited.isEmpty {
                 problems.append(awaited.map { "`\($0)()`" }.joined(separator: ", ") + " is not one of the page's actions"
                                 + (actions.isEmpty ? "" : " (it has " + actions.sorted().map { "`\($0)()`" }.joined(separator: ", ") + ")"))
+            }
+            problems += Self.stateReads(in: body, spec: spec, inputs: inputs)
+        }
+        return problems
+    }
+
+    /// The state a page's body reads that the page does not have: `x.state.y` where `x` is not one of its relays, and
+    /// `state.y`, `_state.y` or `$state.y` where its own state holds no `y`. A page binds its own state as `_state.y`;
+    /// it has no `$state`.
+    ///
+    /// PIN: A BODY READS THE STATE ITS PAGE HAS (Seer R5, 2026-11-15). The Void was accepted reading
+    /// `library.state.exchanges` with `chat` its only relay, and binding `$state.text` with no `text` in its state; the
+    /// build failed on both, after the turn had moved on. Only a name the body does not bind itself is read, and only
+    /// where `.state.` says it is a relay's, so a local or a loop's value is left to the compiler.
+    static func stateReads(in body: String, spec: ComponentSpec, inputs: [String] = []) -> [String] {
+        let bound = Self.bound(in: body)
+        let own = Set(spec.fields.flatMap { [$0.name, SwiftName.member($0.name)] })
+        let relayNames = Set(spec.relays.map(\.name))
+        let skipped = relayNames.union(bound).union(inputs).union(["self", "center", "_state", "state"])
+        /// The page's relays whose service holds `field`.
+        func holders(_ field: String) -> [String] {
+            spec.relays.filter { spec.index.services[$0.type]?.field(field) != nil }.map { "`\($0.name).state.\(field)`" }
+        }
+        func base(_ service: String) -> String { service.hasSuffix("Service") ? String(service.dropLast("Service".count)) : service }
+        var problems: [String] = [], said: Set<String> = []
+        for match in body.groups(#"(?<![\w.$\\])([a-z_]\w*)\.state\.([A-Za-z_]\w*)"#) where match.count == 2 {
+            let (name, field) = (match[0], match[1])
+            guard !skipped.contains(name), said.insert(name + "." + field).inserted else { continue }
+            let read = holders(field)
+            if !read.isEmpty {
+                problems.append("`\(name).state.\(field)`: `\(name)` is not one of the page's relays; `\(field)` is read as " + read.joined(separator: " or "))
+                continue
+            }
+            // A service the app has that holds the field, or is named for the relay: the relay the call would add.
+            let services = spec.index.services.keys.sorted()
+            let singular = name.hasSuffix("s") ? String(name.dropLast()) : name
+            let service = services.first { spec.index.services[$0]?.field(field) != nil }
+                ?? services.first { base($0).lowercased() == name.lowercased() || base($0).lowercased() == singular.lowercased() }
+            problems.append("`\(name).state.\(field)`: `\(name)` is not one of the page's relays"
+                            + (service.map { ": add it to `relays` (`\(name): \($0)`)" } ?? ", and no service holds `\(field)`: add the relay, or make the service first"))
+        }
+        guard !bound.contains("state") else { return problems }
+        for match in body.groups(#"(?<![\w.])([$_]?)state\.([A-Za-z_]\w*)"#) where match.count == 2 {
+            let (prefix, field) = (match[0], match[1])
+            // `_state` is a Binding of the whole state: its own members are not fields.
+            if prefix == "_", ["wrappedValue", "projectedValue", "transaction", "animation"].contains(field) { continue }
+            guard said.insert(prefix + "state." + field).inserted else { continue }
+            let has = own.contains(field)
+            if prefix == "$" {
+                problems.append("`$state.\(field)`: a page has no `$state`; it binds its own state as `_state.\(field)`"
+                                + (has ? "" : ", and its state has no `\(field)` yet: add it to the call's `state` (`\(field) Type = …`)"))
+            } else if !has {
+                let read = holders(field)
+                problems.append("`\(prefix)state.\(field)`: the page's state has no `\(field)`"
+                                + (read.isEmpty ? ": add it to the call's `state` (`\(field) Type = …`)" : "; it is read as " + read.joined(separator: " or "))
+                                + (spec.fields.isEmpty ? "" : " (its state holds " + spec.fields.map { "`\(SwiftName.member($0.name))`" }.joined(separator: ", ") + ")"))
             }
         }
         return problems
