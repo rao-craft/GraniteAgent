@@ -333,6 +333,85 @@ final class AppTests: XCTestCase {
         }
     }
 
+    /// PIN (Seer r6b, 2026-11-15): a page may relay the layout before the navigation is made, and writes the bytes it
+    /// writes after it, as the navigation does; the navigation reads every page that relays its layout, and a
+    /// destination one names that it does not have, or a part of the layout one reads that its layout lacks, is refused
+    /// with the page named, made first or after.
+    func testPagesThatMoveTheAppMayComeBeforeTheNavigation() async throws {
+        func seer(_ pages: [GraniteAppAgent.Input]) async throws -> URL {
+            let folder = try Fixture.folder()
+            for call in [Fixture.seerProject, Fixture.account, Fixture.signIn] + Fixture.seerStill + pages { try await Fixture.call(call, in: folder) }
+            return folder
+        }
+        /// Each file at or under `paths`, by its path inside the app.
+        func files(_ folder: URL, _ paths: [String]) throws -> [String: String] {
+            var found: [String: String] = [:]
+            for path in paths {
+                let url = folder.appendingPathComponent(path)
+                var isFolder: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder) else { continue }
+                for file in isFolder.boolValue ? ProjectIndex.swiftFiles(under: url, skipping: []) : [url] {
+                    found[String(file.path.dropFirst(folder.path.count + 1))] = try String(contentsOf: file, encoding: .utf8)
+                }
+            }
+            return found
+        }
+        let movers = Fixture.seerMovers.map { "Components/\($0.type!)" }
+        let before = try await seer([])
+        for page in Fixture.seerMovers {
+            let result = try await Fixture.call(page, in: before)
+            XCTAssertTrue(result.notes.contains { $0.contains("`LayoutService` is the navigation's and is not made yet: \(page.type!) reads it as `make: navigation` writes it") },
+                          "\(result.notes)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: before.appendingPathComponent("Services/LayoutService").path))
+        let pages = try files(before, movers)
+        XCTAssertEqual(pages.count, 13, "\(pages.keys.sorted())")
+
+        func refusal(_ destinations: [String]) async -> String {
+            var input = Fixture.seerAfterItsPages
+            input.destinations = destinations
+            do {
+                try await Fixture.call(input, in: before)
+                return ""
+            } catch { return "\(error)" }
+        }
+        let tabs = [#"auth: SignIn "Sign In" person gate"#, #"library: Library "Library" books.vertical"#, #"seer: Seer "Seer" sparkles default"#, #"models: Models "Models" cpu"#]
+        let missing = await refusal(tabs + [#"wallet: Wallet "Wallet" creditcard sheet over seer bare"#])
+        XCTAssertTrue(missing.contains("`Models` goes to `.profile` (`layout.present(.profile)`), which is not a destination: add it to `destinations`, "
+                                       + "or remake `Models` without it (the destinations are `auth`, `library`, `seer`, `models`, `wallet`)"), missing)
+        let flat = await refusal(tabs + [#"wallet: Wallet "Wallet" creditcard"#, #"profile: Profile "Profile" person.crop.circle"#])
+        for reason in ["`Seer` calls `layout.present`, which the layout has once a destination is a `sheet`: mark the one it puts up `sheet`, or remake `Seer` without it",
+                       "`Models` calls `layout.present`, which the layout has once a destination is a `sheet`",
+                       "`Wallet` calls `layout.closeSheet`, which the layout has once a destination is a `sheet`: mark the one it is shown in `sheet`, or remake `Wallet` without it"] {
+            XCTAssertTrue(flat.contains(reason), "\(reason) in \(flat)")
+        }
+        XCTAssertFalse(flat.contains("`Onboarding`"), flat)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: before.appendingPathComponent("Shared/Utility/AppDestination.swift").path))
+
+        let made = try await Fixture.call(Fixture.seerAfterItsPages, in: before)
+        let written = made.paths.map { String($0.dropFirst(before.path.count + 1)) }.filter { !$0.contains(".xcodeproj") }
+        XCTAssertTrue(written.contains("Services/LayoutService/LayoutService.swift"), "\(written)")
+        let navigation = try files(before, written)
+        XCTAssertEqual(navigation.count, written.count, "\(written)")
+
+        // Made the usual way, the navigation over placeholders and the pages after it, they write the same bytes.
+        let after = try await seer(["Seer", "Wallet", "Models"].map { Fixture.placeholderPage($0, symbol: "circle") } + [Fixture.seerOnboarding])
+        try await Fixture.call(Fixture.seerAfterItsPages, in: after)
+        XCTAssertEqual(try files(after, written), navigation)
+        for page in Fixture.seerMovers {
+            let result = try await Fixture.call(page, in: after)
+            XCTAssertFalse(result.notes.contains { $0.contains("is not made yet") }, "\(result.notes)")
+        }
+        XCTAssertEqual(try files(after, movers), pages)
+
+        // A page made after the navigation reads its layout as written; the navigation made again holds it to its own.
+        try await Fixture.call(GraniteAppAgent.Input(make: .component, type: "Library", relays: ["layout: LayoutService"], layout: .blank,
+                                                     body: #"Text(layout.state.sheet?.rawValue ?? "none")"#), in: before)
+        let again = await refusal(Fixture.seerAfterItsPages.destinations ?? [])
+        XCTAssertTrue(again.contains("`Library` reads `layout.state.sheet`, and these sheets go up one over another (`over`): the layout holds `sheets`, "
+                                     + "the lowest first, so read `layout.state.sheets.last`, or remake `Library` without it"), again)
+    }
+
     /// With sheets and no default, the tab on screen is still kept between launches, and one that is no longer a tab
     /// reads as the first; a default alone changes only where a plain launch opens.
     func testWithNoDefaultTheTabIsKeptAndADefaultAloneListsEveryDestination() async throws {
@@ -495,7 +574,7 @@ final class AppTests: XCTestCase {
         let result = try await Fixture.call(Fixture.seerChrome, in: folder)
         for note in ["`seer`'s image is `SeerMark().frame(width: 30, height: 30)`, drawn once at the screen's scale in its own colours",
                      "the tab bar shows each tab's image alone",
-                     "the selected tab takes `Color.accentColor`, and so does each sheet's stack (iOS), as the original presents its sheets from inside its tinted tab view",
+                     "the selected tab takes `Color.accentColor`, and so does each sheet's stack (iOS), as sheets presented from inside the tinted tab view would",
                      "a tab change on iPhone gives a light impact", "`Onboarding()` is drawn over the tabs, under every sheet"] {
             XCTAssertTrue(result.notes.contains { $0.contains(note) }, "\(note) in \(result.notes)")
         }

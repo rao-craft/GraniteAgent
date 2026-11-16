@@ -236,6 +236,31 @@ enum Fixture {
         actions: [#"wallet "Wallet" creditcard = layout.present(.wallet)"#],
         body: #"ContentUnavailableView("Seer", systemImage: "sparkles")"#)
 
+    /// Seer's pages that move the app, made before its navigation as the floor makes them (r6b, 2026-11-15): the Seer
+    /// page puts Wallet up, Wallet closes itself in its bar (its sheet is `bare`), Models puts Profile up, and the
+    /// first-run layer reads the tab that is up.
+    static let seerMovers: [GraniteAppAgent.Input] = [
+        seerWithWallet,
+        GraniteAppAgent.Input(make: .component, type: "Wallet", relays: ["layout: LayoutService"], layout: .blank,
+                              body: #"ContentUnavailableView("Wallet", systemImage: "creditcard")"# + "\n    .toolbar {\n        ToolbarItem(placement: .confirmationAction) {\n"
+                                + #"            Button("Close", systemImage: "xmark") { layout.closeSheet() }"# + "\n        }\n    }"),
+        GraniteAppAgent.Input(make: .component, type: "Models", relays: ["layout: LayoutService"], layout: .blank,
+                              body: #"Button("Profile", systemImage: "person.crop.circle") { layout.present(.profile) }"#),
+        GraniteAppAgent.Input(make: .component, type: "Onboarding", relays: ["layout: LayoutService"], layout: .blank,
+                              body: "Text(layout.state.destination.rawValue)\n    .font(.caption)\n    .allowsHitTesting(false)"),
+    ]
+
+    /// The pages Seer's navigation names beside the ones that move the app, for the calls above.
+    static let seerStill = [placeholderPage("Library", symbol: "books.vertical"), placeholderPage("Profile", symbol: "person.crop.circle"), seerSettings]
+
+    /// Seer's navigation made after the pages that move the app: its sheets at their own heights, Wallet drawing its own
+    /// close, the tab bar's tint, and the first-run layer over the tabs.
+    static var seerAfterItsPages: GraniteAppAgent.Input {
+        var input = seerSheets
+        input.overlays = ["Onboarding"]
+        return input
+    }
+
     static let settings = GraniteAppAgent.Input(
 
         make: .component, type: "Settings", relays: ["config: ConfigService"], layout: .settings,

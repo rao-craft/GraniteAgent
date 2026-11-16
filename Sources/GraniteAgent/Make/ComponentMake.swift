@@ -2,6 +2,11 @@
 //        subviews' bodies from the host's model when a line describes one, from their value's fields otherwise.
 //  PIN:  A PAGE READS SERVICES THAT EXIST. A relay to a service the project does not have is refused, and a page's
 //        rows are bound to the service's real fields, read off its center.
+//  PIN:  THE LAYOUT IS KNOWN BEFORE IT IS MADE. `LayoutService` is the navigation's own type, and what it holds is what
+//        the navigation's templates write, so a page may relay it before `make: navigation` has run, and is checked
+//        against that (`NavigationTemplates.unmadeLayout`). The navigation, made after, checks each destination the
+//        page names (Seer r6b, 2026-11-15: the pages that move the app could be made only after a first navigation
+//        that the navigation naming them then replaced).
 
 import Foundation
 import GraniteAgents
@@ -31,7 +36,7 @@ struct ComponentMake {
             notes.append("the page is named \(type): pages are named for what they are, without a suffix")
         }
         guard SwiftName.isTypeName(type) else { throw GraniteError.refused(["`\(type)` is not a type name in UpperCamelCase"]) }
-        let index = ProjectIndex(root: workspace.root)
+        var index = ProjectIndex(root: workspace.root)
         // A page named as a package's type shadows it in the app (Margin, 2026-11-01: a `PostPage` page beside
         // MarginKit's `PostPage`, the page of posts its client answers).
         if let module = index.modules[type], index.components[type] == nil {
@@ -42,6 +47,10 @@ struct ComponentMake {
         for line in input.relays ?? [] where !line.trimmingCharacters(in: .whitespaces).isEmpty {
             do {
                 let relay = try RelayLine.parse(line)
+                if index.services[relay.type] == nil, relay.type == NavigationTemplates.unmadeLayout.name {
+                    // The navigation's layout, read as the navigation will write it.
+                    index.services[relay.type] = NavigationTemplates.unmadeLayout
+                }
                 if index.services[relay.type] == nil {
                     problems.append(RelayLine.missing(line, relay: relay, declared: index.declared))
                 } else if relays.contains(where: { $0.name == relay.name }) {
@@ -50,6 +59,10 @@ struct ComponentMake {
                     relays.append(relay)
                 }
             } catch { problems.append("\(error)") }
+        }
+        if let relay = relays.first(where: { index.services[$0.type]?.isUnmade == true }) {
+            notes.append("`\(relay.type)` is the navigation's and is not made yet: \(type) reads it as `make: navigation` writes it, so the project "
+                         + "builds once the navigation is made, and the navigation checks each destination \(type) names through `\(relay.name)`")
         }
         var fields: [Field] = [], inputs: [Field] = []
         for line in input.state ?? [] where !line.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -332,6 +345,8 @@ struct ComponentMake {
                     let optional = holder.type.hasSuffix("?") ? "?" : ""
                     problems.append("`\(relay.name).\(member)` is a field of \(relay.type)'s `\(holder.name)` (\(holder.type)): read it as "
                                     + "`\(relay.name).state.\(holder.name)\(optional).\(member)`")
+                } else if Self.isNavigations(service, index: index) {
+                    problems.append(Self.layoutMisuse(member, relay: relay))
                 } else {
                     let entries = service.entries.filter { !["set", "binding"].contains($0) }
                     // PIN: say how to add it. Told only "FeedService has no `load`" of a service with no work at all, the
@@ -343,8 +358,32 @@ struct ComponentMake {
                                        : ": its work is " + entries.map { "`\($0)(…)`" }.joined(separator: ", ") + "; to add `\(member)`, " + add))
                 }
             }
+            // Before the navigation is made the compiler cannot read the layout's state, and what it holds is known.
+            if service.isUnmade {
+                for field in text.matches(#"(?<![\w.])\#(relay.name)\.state\.([A-Za-z_]\w*)"#) where service.field(field) == nil && seen.insert("state." + field).inserted {
+                    problems.append("`\(relay.name).state.\(field)`: \(relay.type)'s state has no `\(field)` (it holds "
+                                    + service.fields.map { "`\($0.name)`" }.joined(separator: ", ") + ")")
+                }
+            }
         }
         return problems
+    }
+
+    /// Whether `service` is the navigation's layout: read off its templates before it is made, or written by it.
+    static func isNavigations(_ service: ProjectIndex.ServiceInfo, index: ProjectIndex) -> Bool {
+        service.name == NavigationTemplates.unmadeLayout.name && (service.isUnmade || index.types["AppDestination"] != nil)
+    }
+
+    /// What a page is told of a member the navigation's layout does not have. The layout is the navigation's, so its
+    /// work is never added with `make: service`: told to, a model would make a second LayoutService beside it.
+    static func layoutMisuse(_ member: String, relay: Relay) -> String {
+        if NavigationTemplates.unmadeLayout.entries.contains(member) {
+            return "\(relay.type) has `\(member)` once a destination is a `sheet`: mark the one this page "
+                + (member == "present" ? "puts up" : "is shown in") + " `sheet` in the navigation (`make: navigation`)"
+        }
+        return "\(relay.type) is the navigation's, and it has no `\(member)`: a page goes to a tab with `\(relay.name).select(.name)`, "
+            + "puts a sheet up with `\(relay.name).present(.name)` and closes it with `\(relay.name).closeSheet()`, "
+            + "and reads where the app is in `\(relay.name).state.destination`"
     }
 
     /// Names the statements bind themselves: `let x`, `for x in`, a closure's `{ a, b in`; what strings hold is not read.
@@ -360,6 +399,11 @@ struct ComponentMake {
         "for", "while", "do", "catch", "throw", "is", "as", "some", "any", "state", "center", "withAnimation", "print", "max", "min",
         "abs", "zip", "stride", "dismiss", "openURL", "openWindow", "defer", "where",
     ]
+
+    /// The services a page may relay: the project's, and the navigation's layout before it is made.
+    static func relayable(_ index: ProjectIndex) -> [String] {
+        Set(index.services.keys).union([NavigationTemplates.unmadeLayout.name]).sorted()
+    }
 
     /// Each name an action calls or starts from that the page cannot see: `loadFeed(…)` when the work is the relay's
     /// (`feed.load(…)`), or `modals.…` with no `modals` relay. Margin c7, 2026-11-02: both were written into the page
@@ -388,7 +432,7 @@ struct ComponentMake {
                 problems.append("`\(name)(…)` is not something the page can call: "
                                 + (owners.isEmpty ? fallback : "call " + owners.joined(separator: " or ")))
             } else {
-                let services = index.services.keys.sorted()
+                let services = Self.relayable(index)
                 let match = services.first { $0.lowercased().hasPrefix(name.lowercased().hasSuffix("s") ? String(name.dropLast()).lowercased() : name.lowercased()) }
                 problems.append("`\(name)` is not one of the page's relays" + (match.map { ": add it to `relays` (`\(name): \($0)`)" }
                                 ?? ", and no service is called that: add the relay, or make the service first"))
@@ -400,7 +444,9 @@ struct ComponentMake {
     static func unknownNames(in body: String, spec: ComponentSpec, view: ViewSpec?, inputs: [String] = []) -> [String] {
         var problems = Self.relayMisuse(in: body, relays: spec.relays, index: spec.index)
         // The app's types, and what this call makes: the page and its subviews.
-        let declared = spec.index.declared.union(spec.index.shapes.keys).union(spec.views.map { spec.viewType($0) }).union([spec.type])
+        // Before the navigation is made, a page that relays its layout may name the types the layout reads.
+        let navigations: Set<String> = spec.relays.contains { spec.index.services[$0.type]?.isUnmade == true } ? ["AppDestination", "LayoutStyle"] : []
+        let declared = spec.index.declared.union(spec.index.shapes.keys).union(spec.views.map { spec.viewType($0) }).union([spec.type]).union(navigations)
         var made: [String] = []
         for name in body.matches(#"(?<![\w.])([A-Z][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\s*\("#) where !made.contains(name) {
             if !knownTypes.contains(name) && !declared.contains(name) { made.append(name) }
@@ -477,7 +523,7 @@ struct ComponentMake {
                 continue
             }
             // A service the app has that holds the field, or is named for the relay: the relay the call would add.
-            let services = spec.index.services.keys.sorted()
+            let services = Self.relayable(spec.index)
             let singular = name.hasSuffix("s") ? String(name.dropLast()) : name
             let service = services.first { spec.index.services[$0]?.field(field) != nil }
                 ?? services.first { base($0).lowercased() == name.lowercased() || base($0).lowercased() == singular.lowercased() }

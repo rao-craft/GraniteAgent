@@ -38,7 +38,7 @@ the root that holds the relays.
 | `into` | optional | the folder, relative to the project; `Services/<Type>` and `Components/<Type>` when left out; a kit's folder puts a public service in the kit |
 | `state` | service, component | fields in the models syntax, one a line: `posts [Post] = []`, `selected String?`; a page's `let post Post` is an input |
 | `events` | service | the work, one a line (below) |
-| `relays` | service, component, navigation | `feed: FeedService`, or `Feed`; navigation reads them only for its `gate` |
+| `relays` | service, component, navigation | `feed: FeedService`, or `Feed`; navigation reads them only for its `gate`; a page may relay `layout: LayoutService` before the navigation is made |
 | `layout` | component | `list`, `grid`, `detail`, `form`, `settings`, `search`, `compose`, `tabs`, `threePane`, `blank` |
 | `shows`, `actions`, `views` | component | what the page draws, does, and its subviews (below) |
 | `destinations`, `style` | navigation | `feed: Feed "Feed" house`, then `default`, `sheet` (`sheet over models`, `sheet detents medium large`, `sheet bare`) or `gate` when it is more than a tab, and `auth.signup -> auth` for another name a launch may give, `world.full -> world large` with its sheet's height (below); `adaptive`, `tabs`, `sidebar` or `split` |
@@ -109,8 +109,15 @@ page the project has, and reads `layout.state.destination` for the tab that is u
 the same `.tint(Color.accent)` on iOS where there is a tab bar, as an app presenting its sheets from inside its tinted
 tab view has them; the gate, the root's, keeps the system's.
 
-A line it cannot read, a field that does not exist, a relay that would loop, a page the project does not have: the call
-is refused with every reason at once, and nothing is written.
+A page that moves the app relays `layout: LayoutService` (`layout.present(.wallet)`, `layout.select(.seer)`,
+`layout.closeSheet()`, `layout.state.destination`), and may be made before the navigation, which names it: until then it
+is held to the layout the navigation writes, and the project builds once the navigation is made. The navigation, when
+it is made, reads every page that relays its layout, and refuses a destination one names that it does not have, or a
+part of the layout one reads that its own lacks, naming the page.
+
+A line it cannot read, a field that does not exist, a relay that would loop, a page the project does not have, a
+destination a page names that the navigation does not have: the call is refused with every reason at once, and nothing
+is written.
 
 ## How the output is made
 
@@ -155,6 +162,7 @@ GRANITE_BUILD=1 swift test     # a recipe app made call by call, built and teste
                                # a sheet, the mark drawn as a tab's image, icon-only tabs, a tint, a tab change's
                                # impact, the first-run layer and the toast window, and again with sheets at their
                                # own heights (a medium one over a tab, a fraction one stacked on it, the first
-                               # drawing its own close, aliases naming heights, the tab bar's tint); a fresh
-                               # Xcode project linked, built and tested
+                               # drawing its own close, aliases naming heights, the tab bar's tint), and again
+                               # with the pages that move the app made before the navigation; a fresh Xcode
+                               # project linked, built and tested
 ```

@@ -25,7 +25,7 @@ granite's own log.
 | `into` | no | the folder, relative to the project; Services/<Type> or Components/<Type> when left out; a kit's folder (`Packages/RecipeKit`) puts a public service in the kit |
 | `state` | no | fields, one a line, in the models syntax: `posts [Post] = []`, `selected String?`; a page's `let post Post` is an input it is made with |
 | `events` | no | a service's work, one a line: `load(page Int) -> posts = API.posts(page: page) "loads a page"`; `+> posts` appends; with no `= call` the host's model writes the work |
-| `relays` | no | the services a service's work calls, a page reads, or navigation's `gate` reads: `feed: FeedService` or `Feed` |
+| `relays` | no | the services a service's work calls, a page reads, or navigation's `gate` reads: `feed: FeedService` or `Feed`; a page that moves the app relays `layout: LayoutService`, the navigation's own, whether the page is made before the navigation or after |
 | `layout` | no | how a page draws: list, grid, detail, form, settings, search, compose, tabs, threePane, blank |
 | `shows` | no | what a page draws: `items = feed.state.posts`, `item = …`, `selection = feed.state.selected`, `title = "Feed"`, `empty = "No posts yet"`; a row of a form `"Section/Label" = config.state.field` |
 | `actions` | no | what a page does: `refresh = try await feed.load(page: 1)`, `more = …`, `open(post Post) = …`, `compose "New Post" square.and.pencil = …` |
@@ -76,6 +76,35 @@ With an `AgentRefusal`: a kind and reasons, each with its fix. `input` and `call
 
 Each change made to make this agent more precise, dated, with the regime run that measured it and what it
 made of what it was asked before and after (`TESTING.md`). Newest first.
+
+### 2026-11-15 · a page may relay the layout before the navigation is made
+
+Seer's floor (r6b) made a first navigation of five destinations only so that the pages that move the app (Onboarding,
+WalletPage, Models, WorldPage, Library) could relay `layout: LayoutService`, then the real navigation after them: a page
+relaying the layout was refused until `make: navigation` had run ("`LayoutService` is not in the project: make it first
+(`make: service`, `type: Layout`)", advice that would make a second layout), and the navigation is refused until the
+pages it names exist.
+
+`LayoutService` is the navigation's own type, and what it holds is what the navigation's templates write, so a page may
+now relay it whether or not the navigation has run. Before it is made, the page is held to the layout read off those
+templates (`NavigationTemplates.unmadeLayout`: `select`, `present`, `closeSheet`, `show(detail:)`, `closeDetail`, `set`,
+`binding`, and `state.destination`, `sheet`, `sheets`, `style`, `detail`), the fields its body reads off the layout's
+state included, and a note says the project builds once the navigation is made. A member the layout lacks is answered
+with what a page moves the app with, never with `make: service`; a page that forgets the relay is told to add
+`layout: LayoutService`, and a service or the gate that relays it before the navigation is told to make the navigation.
+
+The destinations a page names are checked by the navigation (`NavigationMake.readPages`): when it is made, every page
+that relays the layout is read, and a destination one names through it (`layout.present(.wallet)`,
+`layout.select(.seer)`, `layout.set(.destination(.seer))`, `layout.state.destination == .seer`) that the call does not
+have, or a part of the layout one reads that this navigation's lacks (`present` or `closeSheet` with no sheet, `sheet`
+with sheets that stack, `sheets` with sheets that do not), refuses the navigation with the page named. A page made after
+the navigation is left to the compiler, as before, so a navigation can still grow one call at a time.
+
+Existing calls write the same bytes: the known layout is read only when the project has none, and the navigation's
+reading only refuses. `SameBytesTests`' pins hold, and `AppTests` holds the four pages made before the navigation to the
+bytes they write after it, and the navigation to the same bytes either way.
+
+Measured: not yet. The Seer measure (Craft) is the first.
 
 ### 2026-11-15 · navigation: sheets take the tab bar's tint
 

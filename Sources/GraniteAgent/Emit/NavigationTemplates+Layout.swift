@@ -23,6 +23,31 @@ extension NavigationTemplates {
                 ("Models/LayoutStyle.swift", layoutStyle)]
     }
 
+    /// LayoutService as a page reads it once a navigation of this shape has written it: its state, its writer's kinds
+    /// and its entries, read off these templates as the project's index reads the files once they are written.
+    static func layoutSurface(_ shape: Shape?) -> ProjectIndex.ServiceInfo {
+        let folder = URL(fileURLWithPath: "/LayoutService", isDirectory: true)
+        let files = layoutService(app: "app", first: shape?.opening ?? "first", shape: shape).map { (url: folder.appendingPathComponent($0.path), text: $0.text) }
+        return ProjectIndex.complete(ProjectIndex.ServiceInfo(name: "LayoutService", file: folder.appendingPathComponent("LayoutService.swift")), files: files)
+    }
+
+    /// LayoutService as a page reads it before the navigation is made: what the layout of any navigation holds, read off
+    /// these templates, a sheet over the tabs (`sheet`) and sheets one over another (`sheets`) among them. A page may
+    /// relay it first; the navigation, once made, holds each page that relays it to its own (`NavigationMake.readPages`).
+    static let unmadeLayout: ProjectIndex.ServiceInfo = {
+        func destination(_ name: String, place: Destination.Place = .tab, over: String? = nil) -> Destination {
+            Destination(name: name, view: "Page()", viewType: "Page", title: name, symbol: "circle", place: place, over: over)
+        }
+        var known = layoutSurface(Shape([destination("tab"), destination("sheet", place: .sheet)]))
+        let stacked = layoutSurface(Shape([destination("tab"), destination("sheet", place: .sheet, over: "tab")]))
+        for field in stacked.fields where known.field(field.name) == nil { known.fields.append(field) }
+        for kind in stacked.kinds where !known.kinds.contains(kind) { known.kinds.append(kind) }
+        for entry in stacked.entries where !known.entries.contains(entry) { known.entries.append(entry) }
+        for signature in stacked.signatures where !known.signatures.contains(signature) { known.signatures.append(signature) }
+        known.isUnmade = true
+        return known
+    }()
+
     /// LayoutService with what the shape adds: `select` that knows the sheets and the gate, `present` and
     /// `closeSheet`.
     static func layout(_ shape: Shape) -> String {

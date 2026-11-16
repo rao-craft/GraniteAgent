@@ -228,6 +228,41 @@ a button that puts Wallet up (`seerWithWallet`):
 - not run on a simulator: Wallet with no sheet Close, its tinted bar and `-destination profile.full` opening Wallet and
   Profile large are compiled and unit-tested, not yet seen on a screen
 
+### Seer's floor, r6b: the pages that move the app, before the navigation
+
+*2026-11-15 · the suite and the gated build, no model*
+
+The second floor reading (r6b) made a first navigation of five destinations only so that Onboarding, WalletPage,
+Models, WorldPage and Library could relay `layout: LayoutService`, then the full navigation after them: a page relaying
+the layout was refused until a navigation had run, and the navigation is refused until the pages it names exist.
+
+**The calls**, on Seer with its account, Sign In, Library, Profile and Settings (`Tests/GraniteAgentTests/Support/Fixture.swift`,
+`seerMovers`), made while the project has no layout, then the navigation (`seerAfterItsPages`: the r6a call above with
+`"overlays": ["Onboarding"]`):
+
+```json
+{"make": "component", "type": "Seer", "relays": ["layout: LayoutService"], "layout": "blank",
+ "actions": ["wallet \"Wallet\" creditcard = layout.present(.wallet)"], "body": "ContentUnavailableView(\"Seer\", systemImage: \"sparkles\")"}
+{"make": "component", "type": "Wallet", "relays": ["layout: LayoutService"], "layout": "blank",
+ "body": "ContentUnavailableView(…)\n    .toolbar { ToolbarItem(placement: .confirmationAction) { Button(\"Close\", systemImage: \"xmark\") { layout.closeSheet() } } }"}
+{"make": "component", "type": "Models", "relays": ["layout: LayoutService"], "layout": "blank",
+ "body": "Button(\"Profile\", systemImage: \"person.crop.circle\") { layout.present(.profile) }"}
+{"make": "component", "type": "Onboarding", "relays": ["layout: LayoutService"], "layout": "blank",
+ "body": "Text(layout.state.destination.rawValue)\n    .font(.caption)\n    .allowsHitTesting(false)"}
+```
+
+**Checks**:
+- `swift test`: 99 tests, 6 skipped (the gated builds), 0 failures; the four pages made before the navigation write the
+  bytes they write after it, and the navigation the same bytes either way (`AppTests`); a navigation without
+  `profile`, one with no sheet, and one made again over a page reading `layout.state.sheet` are refused, each naming
+  the page; before the navigation a member or a state field the layout does not have is refused, never with
+  `make: service` (`ComponentTests`)
+- `GRANITE_BUILD=1 swift test --filter GraniteBuildTests`: 6 tests, 0 failures; the calls above built and their tests
+  run on macOS (`aSheetGoesUpOverWhateverIsUpAndClosesAlone`, `aSheetWhosePageDrawsItsOwnCloseGetsNoCloseButton`, the
+  aliases' heights, the gate), built for the iOS simulator with no warning in the navigation or the four pages
+- left to the compiler, as before: a page made after the navigation that names a place it does not have; the
+  navigation made after it reads it
+
 ## Combinations
 
 Level 3 of the regime (`TESTING-REGIME.md`): one prompt a turn chaining agents, run through Craft on a local model,

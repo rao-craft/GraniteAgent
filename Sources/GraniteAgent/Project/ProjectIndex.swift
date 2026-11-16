@@ -18,6 +18,9 @@ struct ProjectIndex {
         /// The services this one's reducers hold relays to.
         var relays: [String] = []
         var isPublic = false
+        /// Whether it is read off the navigation's templates, not the project: the layout a page may relay before
+        /// `make: navigation` has written it.
+        var isUnmade = false
 
         func field(_ name: String) -> String? { fields.first { $0.name == name }?.type }
     }
@@ -280,11 +283,18 @@ struct ProjectIndex {
 
     /// A service's state, writer, entries and relays, read off the files in its folder.
     private func complete(_ service: ServiceInfo) -> ServiceInfo {
+        let files = Self.swiftFiles(under: service.file.deletingLastPathComponent(), skipping: []).compactMap { file in
+            (try? String(contentsOf: file, encoding: .utf8)).map { (url: file, text: $0) }
+        }
+        return Self.complete(service, files: files)
+    }
+
+    /// `service` with its state, writer, entries and relays, read off `files`: its own and those that extend it. The
+    /// navigation's layout is read this way off its templates, before it is written (`NavigationTemplates.layoutSurface`).
+    static func complete(_ service: ServiceInfo, files: [(url: URL, text: String)]) -> ServiceInfo {
         var service = service
-        let folder = service.file.deletingLastPathComponent()
-        let files = Self.swiftFiles(under: folder, skipping: [])
-        for file in files {
-            guard let text = try? String(contentsOf: file, encoding: .utf8), text.contains("extension \(service.name)") || file == service.file else { continue }
+        for (file, text) in files {
+            guard text.contains("extension \(service.name)") || file == service.file else { continue }
             let lines = text.components(separatedBy: "\n")
             if let state = lines.firstIndex(where: { $0.range(of: #"^\s*(?:public )?struct State\s*:"#, options: .regularExpression) != nil }) {
                 let indent = lines[state].prefix { $0 == " " }.count

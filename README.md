@@ -31,10 +31,11 @@ Ask for one piece or a whole app in a request. Craft runs the steps one at a tim
   swipes and toolbars.
 - **Navigation and modals.** Your destinations laid out for each device, the tab it opens on, places that slide up as
   sheets at the heights you give them, a sign-in gate before them, and one place for the app's sheets, alerts, toasts
-  and panels. Every screen opens straight from a launch, a sheet over the tab or the sheet it belongs to, and an inner
-  screen by a name of its own (`auth.signup`), so tests and screenshots need no taps; toasts can sit in their own
-  window above every alert. The tab bar can show images alone, your mark as a tab in its own colours, your tint on the
-  selected tab and each sheet's controls, and a light tap on a change, with a first-run layer over the tabs.
+  and panels; the pages that move the app can come before it, and it checks every place they name. Every screen opens
+  straight from a launch, a sheet over the tab or the sheet it belongs to, and an inner screen by a name of its own
+  (`auth.signup`), so tests and screenshots need no taps; toasts can sit in their own window above every alert. The
+  tab bar can show images alone, your mark as a tab in its own colours, your tint on the selected tab and each sheet's
+  controls, and a light tap on a change, with a first-run layer over the tabs.
 - **Granite in an app you already have.** Point it at an existing Xcode project and it links Granite and adds the
   root and settings around the app's own code, without rewriting your views.
 

@@ -26,7 +26,8 @@ enum RelayLine {
 
     /// Why `relay` cannot be held, when the project has no such service. A type it has that is not a service (a
     /// client, a model) is called in an event's work, not relayed: told "make it first", a model made an empty
-    /// `HearthClientService` to hold `client: HearthClient` (Hearth, 2026-11-01).
+    /// `HearthClientService` to hold `client: HearthClient` (Hearth, 2026-11-01). The navigation's layout is never
+    /// made with `make: service`.
     static func missing(_ line: String, relay: Relay, declared: Set<String>) -> String {
         let text = line.trimmingCharacters(in: .whitespaces)
         let named = (text.firstIndex(of: ":").map { String(text[text.index(after: $0)...]) } ?? text.split(separator: " ").last.map(String.init) ?? text)
@@ -34,6 +35,10 @@ enum RelayLine {
         if named != relay.type, declared.contains(named) {
             return "`\(named)` is not a service, so it is not relayed: an event's work calls it (`load(page Int) -> items = \(named)…`), "
                 + "and `relays` name only the app's services (`feed: FeedService`)"
+        }
+        // The navigation's own: a page may relay it before it is made, and nothing else makes it.
+        if relay.type == NavigationTemplates.unmadeLayout.name {
+            return "`\(relay.type)` is the navigation's, written by `make: navigation`: make the navigation first; a page may relay it before"
         }
         return "`\(relay.type)` is not in the project: make it first (`make: service`, `type: \(SwiftName.service(relay.type).base)`)"
     }

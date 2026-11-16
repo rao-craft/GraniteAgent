@@ -311,6 +311,57 @@ final class ComponentTests: XCTestCase {
         }
     }
 
+    /// PIN (Seer r6b, 2026-11-15): before the navigation is made, a page that relays the layout is held to what the
+    /// navigation writes: a member the layout does not have, its state read without `.state`, and a field its state does
+    /// not hold are refused, never with `make: service`, which would make a second layout. A page that forgets the relay
+    /// is told to add it, and a service may not relay the layout until the navigation is made.
+    func testAPageThatRelaysTheLayoutBeforeTheNavigationIsHeldToWhatItWillWrite() async throws {
+        let folder = try await app()
+        let input = GraniteAppAgent.Input(make: .component, type: "Shelf", relays: ["layout: LayoutService"], layout: .blank,
+                                          actions: ["home = layout.go(.recipes)", "back = layout.destination = .recipes"],
+                                          body: "Text(layout.state.destination.rawValue)")
+        do {
+            try await Fixture.call(input, in: folder)
+            XCTFail("the page is refused")
+        } catch {
+            let text = "\(error)"
+            for reason in ["`home`: LayoutService is the navigation's, and it has no `go`: a page goes to a tab with `layout.select(.name)`, "
+                            + "puts a sheet up with `layout.present(.name)` and closes it with `layout.closeSheet()`",
+                           "`back`: `layout.destination` is LayoutService's state: read it as `layout.state.destination`"] {
+                XCTAssertTrue(text.contains(reason), "\(reason) in \(text)")
+            }
+            XCTAssertFalse(text.contains("make: service"), text)
+        }
+        var unheld = input
+        unheld.actions = nil
+        unheld.body = "Text(layout.state.tab.rawValue)"
+        do {
+            try await Fixture.call(unheld, in: folder)
+            XCTFail("the page is refused")
+        } catch {
+            XCTAssertTrue("\(error)".contains("the page's `body`: `layout.state.tab`: LayoutService's state has no `tab` (it holds `destination`, `sheet`, `style`, "
+                                              + "`detail`, `sheets`)"), "\(error)")
+        }
+        var unrelayed = input
+        unrelayed.relays = nil
+        unrelayed.actions = ["home = layout.select(.recipes)"]
+        unrelayed.body = #"Text("Shelf")"#
+        do {
+            try await Fixture.call(unrelayed, in: folder)
+            XCTFail("a page that moves the app relays the layout")
+        } catch {
+            XCTAssertTrue("\(error)".contains("`home`: `layout` is not one of the page's relays: add it to `relays` (`layout: LayoutService`)"), "\(error)")
+        }
+        do {
+            try await Fixture.call(GraniteAppAgent.Input(make: .service, type: "Trail", state: ["steps [String] = []"], relays: ["layout: LayoutService"]), in: folder)
+            XCTFail("a service relays the layout once the navigation is made")
+        } catch {
+            XCTAssertTrue("\(error)".contains("`LayoutService` is the navigation's, written by `make: navigation`: make the navigation first; a page may relay it before"), "\(error)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Components/Shelf").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Services/LayoutService").path))
+    }
+
     /// PIN (G-025): a field of an entity the service holds is read through that state field, never added as work.
     func testAFieldOfWhatAServiceHoldsIsReadThroughItsState() {
         var index = ProjectIndex()

@@ -10,6 +10,10 @@
 //        are refused; so is a sheet `over` nothing, over the gate, over itself, or over a sheet that goes up over it.
 //  PIN:  WHAT IS DRAWN OVER THE TABS IS THE APP'S. A view drawn as a tab's image and an overlay over the tabs are views
 //        the project has; one it does not is refused, as a destination's page is.
+//  PIN:  A PAGE THAT MOVES THE APP NAMES PLACES IT HAS. A page may relay the layout before the navigation is made, so
+//        the navigation reads every page that relays it: a destination one names that this call does not have, or a
+//        part of the layout one reads that this call's layout lacks, is refused with the page named, never left to
+//        a build that fails after the turn has moved on.
 
 import Foundation
 
@@ -86,6 +90,8 @@ struct NavigationMake {
         let gate = readGate(gates.first, index: index, problems: &problems)
         let style = input.style ?? .adaptive
         let root = input.root?.trimmingCharacters(in: .whitespaces) ?? Self.rootPage(layout) ?? "Home"
+        Self.readPages(index, layout: NavigationTemplates.layoutSurface(NavigationTemplates.Shape(destinations, aliases: resolved)),
+                       destinations: destinations, root: root, problems: &problems)
         let rootView = index.components[root]?.deletingLastPathComponent().appendingPathComponent("\(root)+View.swift")
         if let rootView {
             let text = (try? String(contentsOf: rootView, encoding: .utf8)) ?? ""
@@ -214,8 +220,8 @@ struct NavigationMake {
         if hasTabBar {
             if shape.iconsOnly { plan.notes.append("the tab bar shows each tab's image alone, with an empty title as `Tab(\"\", …)` writes it") }
             if let tint {
-                plan.notes.append("the selected tab takes `\(tint)`" + (shape.sheets.isEmpty ? "" : ", and so does each sheet's stack (iOS), as the original presents "
-                                  + "its sheets from inside its tinted tab view; the gate keeps the system's"))
+                plan.notes.append("the selected tab takes `\(tint)`" + (shape.sheets.isEmpty ? "" : ", and so does each sheet's stack (iOS), as sheets presented from "
+                                  + "inside the tinted tab view would; the gate keeps the system's"))
             }
             if let feedback = input.tabFeedback {
                 plan.notes.append("a tab change on iPhone gives a \(feedback.rawValue) impact (`.sensoryFeedback(\(feedback.sensory), trigger: layout.state.destination)`)")
@@ -343,6 +349,69 @@ struct NavigationMake {
             }
         }
         return notes
+    }
+
+    /// Each page that relays the layout, read against the layout this call writes. A page may relay it before the
+    /// navigation is made (`NavigationTemplates.unmadeLayout`), so each destination it names through the relay
+    /// (`layout.present(.wallet)`, `layout.select(.seer)`, `layout.set(.destination(.seer))`,
+    /// `layout.state.destination == .seer`) is one of these, and each part of the layout it reads is one this layout
+    /// has: `present` and `closeSheet` come with a sheet, `sheet` with sheets that go up one at a time, `sheets` with
+    /// sheets one over another. The root page, which this call writes, is not read.
+    static func readPages(_ index: ProjectIndex, layout: ProjectIndex.ServiceInfo, destinations: [Destination], root: String, problems: inout [String]) {
+        guard !destinations.isEmpty else { return }
+        let names = destinations.map(\.name)
+        let own = Set(layout.entries).union(["set", "binding", "state", "isLoaded", "center", "preload", "restore"])
+        for (page, file) in index.components.sorted(by: { $0.key < $1.key }) where page != root {
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            let relays = text.matches(#"@Relay(?:\([^)]*\))?\s+(?:(?:public|private|fileprivate|internal)\s+)?var\s+(\w+)\s*:\s*\#(layout.name)\b"#)
+            guard !relays.isEmpty else { continue }
+            // The page's own files, the one that declares it and those that extend it, without their strings and comments.
+            let code = ProjectIndex.swiftFiles(under: file.deletingLastPathComponent(), skipping: []).compactMap { other -> String? in
+                guard let source = try? String(contentsOf: other, encoding: .utf8) else { return nil }
+                return other == file || source.range(of: #"\bextension\s+\#(page)\b"#, options: .regularExpression) != nil ? source : nil
+            }.joined(separator: "\n")
+                .replacingOccurrences(of: #""(?:[^"\\\n]|\\.)*""#, with: "\"\"", options: .regularExpression)
+                .replacingOccurrences(of: #"//[^\n]*"#, with: "", options: .regularExpression)
+            var named: [(name: String, use: String)] = [], said: Set<String> = []
+            for relay in relays {
+                let at = #"(?<![\w.])"# + relay + #"\s*\.\s*"#
+                for match in code.groups(at + #"(present|select)\s*\(\s*\.([a-z_]\w*)"#) where match.count == 2 {
+                    named.append((match[1], "`\(relay).\(match[0])(.\(match[1]))`"))
+                }
+                for match in code.groups(at + #"set\s*\(\s*\.(destination|sheet)\s*\(\s*\.([a-z_]\w*)"#) where match.count == 2 {
+                    named.append((match[1], "`\(relay).set(.\(match[0])(.\(match[1])))`"))
+                }
+                for match in code.groups(at + #"state\s*\.\s*(destination|sheet)\s*([!=]=)\s*\.([a-z_]\w*)"#) where match.count == 3 {
+                    named.append((match[2], "`\(relay).state.\(match[0]) \(match[1]) .\(match[2])`"))
+                }
+                for member in code.matches(at + #"([A-Za-z_]\w*)"#) where !own.contains(member) && said.insert(member).inserted {
+                    problems.append("`\(page)` calls `\(relay).\(member)`, which " + (NavigationTemplates.unmadeLayout.entries.contains(member)
+                        ? "the layout has once a destination is a `sheet`: mark the one it " + (member == "present" ? "puts up" : "is shown in") + " `sheet`"
+                        : "this navigation's layout does not have") + ", or remake `\(page)` without it")
+                }
+                for field in code.matches(at + #"state\s*\.\s*([A-Za-z_]\w*)"#) where layout.field(field) == nil && said.insert("state." + field).inserted {
+                    let reads = "`\(page)` reads `\(relay).state.\(field)`"
+                    if field == "sheet", layout.field("sheets") != nil {
+                        problems.append(reads + ", and these sheets go up one over another (`over`): the layout holds `sheets`, the lowest first, "
+                                        + "so read `\(relay).state.sheets.last`, or remake `\(page)` without it")
+                    } else if field == "sheets", layout.field("sheet") != nil {
+                        problems.append(reads + ", the sheets one over another that `over` makes, and these go up one at a time: read "
+                                        + "`\(relay).state.sheet`, or give a sheet's line `over`")
+                    } else {
+                        problems.append(reads + ", which " + (NavigationTemplates.unmadeLayout.field(field) != nil ? "the layout holds once a destination is a `sheet`"
+                                                              : "this navigation's layout does not hold") + ", or remake `\(page)` without it")
+                    }
+                }
+            }
+            var missing: [(name: String, use: String)] = []
+            for use in named where !names.contains(use.name) && !missing.contains(where: { $0.name == use.name }) { missing.append(use) }
+            if !missing.isEmpty {
+                problems.append("`\(page)` goes to " + missing.map { "`.\($0.name)` (\($0.use))" }.joined(separator: " and ")
+                                + (missing.count == 1 ? ", which is not a destination" : ", which are not destinations") + ": add "
+                                + (missing.count == 1 ? "it" : "each") + " to `destinations`, or remake `\(page)` without "
+                                + (missing.count == 1 ? "it" : "them") + " (the destinations are " + names.map { "`\($0)`" }.joined(separator: ", ") + ")")
+            }
+        }
     }
 
     /// The gate's page, its condition and the relays the condition reads; nil when there is no gate. Each of the line

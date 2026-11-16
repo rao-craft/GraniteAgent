@@ -7,8 +7,9 @@ import XCTest
 /// checked, built and tested on macOS, built for the iOS simulator, its kit tested with SwiftPM; Seer's shell (a
 /// default tab, sheets and a sign-in gate) built and tested the same way, again with launch aliases, a sheet over a
 /// tab, a sheet over a sheet and the toast window, and again with sheets at their own heights, a medium one over a tab
-/// and a fraction one stacked on it, the first drawing its own close, aliases naming heights and the tab bar's tint;
-/// and a fresh Xcode project linked and built.
+/// and a fraction one stacked on it, the first drawing its own close, aliases naming heights and the tab bar's tint,
+/// and once more with the pages that move the app made before the navigation; and a fresh Xcode project linked and
+/// built.
 /// Gated (`GRANITE_BUILD=1`): a build takes minutes and fetches Granite.
 final class GraniteBuildTests: XCTestCase {
     /// Where builds keep their packages between runs, under the process's temporary files.
@@ -171,6 +172,38 @@ final class GraniteBuildTests: XCTestCase {
         let written = ["PlatformNavigationView.swift", "AppDestination.swift", "LayoutService"]
         XCTAssertFalse(iOS.log.components(separatedBy: "\n").contains { line in line.contains(": warning: ") && written.contains { line.contains($0) } },
                        "the sheets' heights build for iOS without a warning: \(iOS.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")
+        if testRun?.totalFailureCount == 0 { try? FileManager.default.removeItem(at: derived) }
+    }
+
+    /// Seer's pages that move the app made before its navigation (r6b, 2026-11-15): the Seer page putting Wallet up,
+    /// Wallet closing itself in its bar, Models putting Profile up and the first-run layer reading the tab that is up,
+    /// each made while the project has no layout; then the navigation that names them, its sheets at their own heights
+    /// and the first-run layer over the tabs. Built and its tests run on macOS, built for the iOS simulator.
+    func testPagesThatMoveTheAppMadeBeforeTheNavigationBuild() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["GRANITE_BUILD"] == "1", "set GRANITE_BUILD=1 to build the output")
+        let folder = try Fixture.folder()
+        let app = folder.appendingPathComponent("Seer")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        for call in [Fixture.seerProject, Fixture.account, Fixture.signIn] + Fixture.seerStill + Fixture.seerMovers { try await Fixture.call(call, in: app) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: app.appendingPathComponent("Services/LayoutService").path), "the pages come first")
+        try await Fixture.call(Fixture.seerAfterItsPages, in: app)
+
+        let derived = folder.appendingPathComponent("DerivedData")
+        let mac = try xcodebuild(["-project", "Seer.xcodeproj", "-scheme", "Seer-macOS", "-destination", "platform=macOS", "CODE_SIGNING_ALLOWED=NO",
+                                  "-skip-testing:SeerUITests-macOS", "build", "test"], in: app, derived: derived, home: folder.appendingPathComponent("home"))
+        XCTAssertEqual(mac.status, 0, Shell.digest(mac.log))
+        XCTAssertTrue(mac.log.contains("** TEST SUCCEEDED **"), Shell.digest(mac.log))
+        for test in ["aSheetGoesUpOverWhateverIsUpAndClosesAlone", "aSheetWhosePageDrawsItsOwnCloseGetsNoCloseButton", "anAliasPutsItsSheetUpAtTheHeightItNames",
+                     "aLaunchThatNamesAnotherDestinationOpensPastTheGate"] {
+            XCTAssertTrue(mac.log.contains("Test \(test)() passed"), test)
+        }
+        XCTAssertFalse(mac.log.contains(": warning: "), "the app builds without a warning: \(mac.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")
+        let iOS = try xcodebuild(["-project", "Seer.xcodeproj", "-scheme", "Seer-iOS", "-destination", "generic/platform=iOS Simulator", "build", "build-for-testing"],
+                                 in: app, derived: derived)
+        XCTAssertEqual(iOS.status, 0, Shell.digest(iOS.log))
+        let written = ["PlatformNavigationView.swift", "AppDestination.swift", "LayoutService"] + Fixture.seerMovers.map { "Components/\($0.type!)/" }
+        XCTAssertFalse(iOS.log.components(separatedBy: "\n").contains { line in line.contains(": warning: ") && written.contains { line.contains($0) } },
+                       "the pages and the navigation build for iOS without a warning: \(iOS.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")
         if testRun?.totalFailureCount == 0 { try? FileManager.default.removeItem(at: derived) }
     }
 

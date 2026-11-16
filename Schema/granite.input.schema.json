@@ -110,7 +110,7 @@
       "type" : "array"
     },
     "relays" : {
-      "description" : "the services a service's work calls, a page reads, or navigation's `gate` reads: `feed: FeedService` or `Feed`",
+      "description" : "the services a service's work calls, a page reads, or navigation's `gate` reads: `feed: FeedService` or `Feed`; a page that moves the app relays `layout: LayoutService`, the navigation's own, whether the page is made before the navigation or after",
       "items" : {
         "type" : "string"
       },
