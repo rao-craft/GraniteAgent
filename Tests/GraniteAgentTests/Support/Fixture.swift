@@ -170,6 +170,17 @@ enum Fixture {
     /// The page Settings goes up in, for the shell above.
     static let seerSettings = placeholderPage("Settings", symbol: "gearshape")
 
+    /// Seer's sheets at their own heights (2026-11-15), as the original's are: Wallet over the middle tab at medium,
+    /// then large; Profile stacked on it at 0.6 of the screen, each showing the drag indicator; Settings on Profile at
+    /// the large detent alone, its line naming none.
+    static let seerDetents = GraniteAppAgent.Input(
+        make: .navigation, relays: ["account: AccountService"],
+        destinations: [#"auth: SignIn "Sign In" person gate"#, #"library: Library "Library" books.vertical"#, #"seer: Seer "Seer" sparkles default"#,
+                       #"models: Models "Models" cpu"#, #"wallet: Wallet "Wallet" creditcard sheet over seer detents medium large"#,
+                       #"profile: Profile "Profile" person.crop.circle sheet over wallet detents fraction(0.6)"#,
+                       #"settings: Settings "Settings" gearshape sheet over profile"#],
+        gate: "account.state.session == nil")
+
     /// Seer's toasts, in a window of their own one level above alerts, their text in the serif design as its type is.
     static let seerToasts = GraniteAppAgent.Input(make: .modals, toasts: .window, toastDesign: .serif)
 

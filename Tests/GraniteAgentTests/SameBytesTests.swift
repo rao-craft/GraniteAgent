@@ -3,10 +3,12 @@ import Foundation
 import XCTest
 @testable import GraniteAgent
 
-/// PIN: ADDITIVE ONLY. Launch aliases, `over` and the toast window are words a call says; every call that says none of
-/// them writes what it wrote before them, byte for byte. Each navigation and modals call below (the guide's examples,
-/// each style, sheets, a default, a gate, and the gate taken away) is held to the bytes the agent wrote at 4e59a5e,
-/// the commit before those words: a scenario's digest is the SHA-256 of its files' paths and SHA-256s, one a line.
+/// PIN: ADDITIVE ONLY. Launch aliases, `over`, the toast window and a sheet's `detents` are words a call says; every
+/// call that says none of them writes what it wrote before them, byte for byte. Each navigation and modals call in
+/// `before` (the guide's examples, each style, sheets, a default, a gate, and the gate taken away) is held to the bytes
+/// the agent wrote at 4e59a5e, the commit before the first of those words; each in `beforeDetents` (Seer's launch
+/// contract, its shell as the original draws it, its toasts in their own window) to the bytes of 9b5bc8f, the commit
+/// before `detents`. A scenario's digest is the SHA-256 of its files' paths and SHA-256s, one a line.
 final class SameBytesTests: XCTestCase {
     static let before: [String: String] = [
         "recipes.adaptive": "83bb25e1ed00cb1a3d6d5ad2f6193b5ab87302ab38d88a91005a8f673d572417",
@@ -23,51 +25,71 @@ final class SameBytesTests: XCTestCase {
         "seer.split": "0235b6b8ba98d9aab3ced78975895c26f98cb54150e14ef2ff201c832fc9ed04",
     ]
 
+    /// Calls that say the words of a2e0f28 and 9b5bc8f and no `detents`, held to the bytes of 9b5bc8f.
+    static let beforeDetents: [String: String] = [
+        "seer.shell": "68dcbd9190e7db4c24fc5666279cbd6eca7989b2a4c9baee301c6905b78612e7",
+        "seer.chrome": "01e26324e167fe27c8236aa265c489e8568561cf2cd8aaf39300e1e10b1484f9",
+        "seer.toasts": "987ff00e234d87a550fbe99988192a2187ed74863ede624031ee879f0ac6dc5b",
+    ]
+
     func testEveryCallWithoutTheNewWordsWritesTheBytesItWroteBefore() async throws {
-        let recipes = try await Self.recipes(), seer = try await Self.seer()
+        let recipes = try await Self.recipes(), seer = try await Self.seer(), shell = try await Self.seerShell()
+        let pinned = Self.before.merging(Self.beforeDetents) { first, _ in first }
         var scenarios = Self.scenarios()
-        XCTAssertEqual(Set(scenarios.map(\.name)), Set(Self.before.keys))
+        XCTAssertEqual(Set(scenarios.map(\.name)), Set(pinned.keys))
+        XCTAssertEqual(pinned.count, Self.before.count + Self.beforeDetents.count, "a scenario is pinned once")
         scenarios.sort { $0.name < $1.name }
         for scenario in scenarios {
             let folder = try Fixture.folder().appendingPathComponent("app")
-            try FileManager.default.copyItem(at: scenario.seer ? seer : recipes, to: folder)
+            let app = switch scenario.app {
+            case .recipes: recipes
+            case .seer: seer
+            case .seerShell: shell
+            }
+            try FileManager.default.copyItem(at: app, to: folder)
             let result = try await Fixture.call(scenario.input, in: folder)
             let files = try result.paths.sorted().map { path in
                 let digest = SHA256.hash(data: try Data(contentsOf: URL(fileURLWithPath: path))).map { String(format: "%02x", $0) }.joined()
                 return "\(path.dropFirst(folder.path.count + 1)) \(digest)"
             }
             let digest = SHA256.hash(data: Data(files.joined(separator: "\n").utf8)).map { String(format: "%02x", $0) }.joined()
-            XCTAssertEqual(digest, Self.before[scenario.name], "\(scenario.name) wrote other bytes than before:\n" + files.joined(separator: "\n"))
+            XCTAssertEqual(digest, pinned[scenario.name], "\(scenario.name) wrote other bytes than before:\n" + files.joined(separator: "\n"))
         }
     }
 
+    /// The app a call is made in a copy of.
+    enum App { case recipes, seer, seerShell }
+
     /// The calls, each made in a copy of the app it needs.
-    static func scenarios() -> [(name: String, input: GraniteAppAgent.Input, seer: Bool)] {
-        var scenarios: [(name: String, input: GraniteAppAgent.Input, seer: Bool)] = []
+    static func scenarios() -> [(name: String, input: GraniteAppAgent.Input, app: App)] {
+        var scenarios: [(name: String, input: GraniteAppAgent.Input, app: App)] = []
         for style in GraniteStyle.allCases {
             var input = Fixture.navigation
             input.style = style
             if style == .split { input.destinations = [#"recipes: RecipeList "Recipes" book | Settings"#, #"search: RecipeSearch "Search" magnifyingglass"#] }
-            scenarios.append(("recipes.\(style.rawValue)", input, false))
+            scenarios.append(("recipes.\(style.rawValue)", input, .recipes))
         }
         var sheet = Fixture.navigation
         sheet.destinations = [#"recipes: RecipeList "Recipes" book"#, #"search: RecipeSearch "Search" magnifyingglass"#, #"settings: Settings "Settings" gearshape sheet"#]
-        scenarios.append(("recipes.sheet", sheet, false))
+        scenarios.append(("recipes.sheet", sheet, .recipes))
         var preferred = Fixture.navigation
         preferred.destinations = [#"recipes: RecipeList "Recipes" book"#, #"search: RecipeSearch "Search" magnifyingglass default"#]
-        scenarios.append(("recipes.default", preferred, false))
-        scenarios.append(("recipes.modals", Fixture.modals, false))
-        scenarios.append(("seer.gated", Fixture.seerNavigation, true))
+        scenarios.append(("recipes.default", preferred, .recipes))
+        scenarios.append(("recipes.modals", Fixture.modals, .recipes))
+        scenarios.append(("seer.gated", Fixture.seerNavigation, .seer))
         var plain = Fixture.seerNavigation
         plain.gate = nil
         plain.relays = nil
         plain.destinations = plain.destinations?.filter { !$0.hasSuffix(" gate") }
-        scenarios.append(("seer.plain", plain, true))
+        scenarios.append(("seer.plain", plain, .seer))
         for style in [GraniteStyle.tabs, .sidebar, .split] {
             var input = Fixture.seerNavigation
             input.style = style
-            scenarios.append(("seer.\(style.rawValue)", input, true))
+            scenarios.append(("seer.\(style.rawValue)", input, .seer))
         }
+        scenarios.append(("seer.shell", Fixture.seerShell, .seerShell))
+        scenarios.append(("seer.chrome", Fixture.seerChrome, .seerShell))
+        scenarios.append(("seer.toasts", Fixture.seerToasts, .seerShell))
         return scenarios
     }
 
@@ -89,6 +111,15 @@ final class SameBytesTests: XCTestCase {
         try await Fixture.call(Fixture.account, in: folder)
         try await Fixture.call(Fixture.signIn, in: folder)
         for page in Fixture.seerPages { try await Fixture.call(page, in: folder) }
+        return folder
+    }
+
+    /// Seer as above with Settings, the first-run layer and a stand-in mark: what its shell's calls name.
+    static func seerShell() async throws -> URL {
+        let folder = try await seer()
+        for page in [Fixture.seerSettings, Fixture.seerOnboarding] { try await Fixture.call(page, in: folder) }
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("Shared/Views"), withIntermediateDirectories: true)
+        try Fixture.seerMark.write(to: folder.appendingPathComponent("Shared/Views/SeerMark.swift"), atomically: true, encoding: .utf8)
         return folder
     }
 }

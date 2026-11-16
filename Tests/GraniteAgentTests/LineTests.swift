@@ -105,7 +105,8 @@ final class LineTests: XCTestCase {
         }
     }
 
-    /// After the symbol: `default` (the tab a plain launch opens on), `sheet` (over the tabs), `gate` (before them).
+    /// After the symbol: `default` (the tab a plain launch opens on), `sheet` (over the tabs), `gate` (before them), and
+    /// for a sheet `over` (what a launch puts up under it) and `detents` (the heights it rests at, the first where it goes up).
     func testDestinationLinesSayWhereTheySit() throws {
         let seer = try DestinationLine.parse(#"seer: Seer "Seer" sparkles default"#)
         XCTAssertEqual(seer, Destination(name: "seer", view: "Seer()", viewType: "Seer", title: "Seer", symbol: "sparkles", detail: nil, detailType: nil,
@@ -125,7 +126,25 @@ final class LineTests: XCTestCase {
         XCTAssertEqual(settings.over, "profile")
         XCTAssertEqual(try DestinationLine.parse(#"contributions: Contributions "Contributions" person.2 over void.reply sheet"#).over, "void.reply",
                        "`over` may come before `sheet`, and name an alias")
+        let world = try DestinationLine.parse(#"world: World "The World" infinity sheet over seer detents medium large"#)
+        XCTAssertEqual(world.place, .sheet)
+        XCTAssertEqual(world.over, "seer")
+        XCTAssertEqual(world.detents, [.medium, .large])
+        XCTAssertEqual(try DestinationLine.parse(#"model: Model "Model" folder sheet over models detents fraction(0.6) large"#).detents, [.fraction(0.6), .large])
+        XCTAssertEqual(try DestinationLine.parse(#"note: Note "Note" note.text detents height(320) sheet"#).detents, [.height(320)], "`detents` may come before `sheet`")
+        XCTAssertEqual(try DestinationLine.parse(#"wallet: Wallet "Wallet" creditcard sheet"#).detents, [], "a sheet that names none goes up large, as before")
+        XCTAssertEqual([SheetDetent.medium, .large, .fraction(0.78), .height(320)].map(\.swift), [".medium", ".large", ".fraction(0.78)", ".height(320)"])
         for (line, reason) in [(#"feed: Feed "Feed" house later"#, "comes `default`, `sheet` or `gate`, not `later`"),
+                               (#"feed: Feed "Feed" house detents medium"#, "a tab is not a sheet: say `sheet detents medium`"),
+                               (#"auth: SignIn "Sign In" person gate detents large"#, "a gate is not a sheet"),
+                               (#"feed: Feed "Feed" house sheet detents"#, "`detents` names the heights the sheet rests at, the first where it goes up"),
+                               (#"feed: Feed "Feed" house sheet detents small"#, "`small` is not a height a sheet rests at"),
+                               (#"feed: Feed "Feed" house sheet detents fraction(0.6"#, "`fraction(0.6` is not a height a sheet rests at"),
+                               (#"feed: Feed "Feed" house sheet detents fraction(1.5)"#, "a fraction is a share of the screen's height, above 0 and at most 1"),
+                               (#"feed: Feed "Feed" house sheet detents height(0)"#, "a height is in points, above 0"),
+                               (#"feed: Feed "Feed" house sheet detents medium medium"#, "`medium` is named twice after `detents`"),
+                               (#"feed: Feed "Feed" house sheet detents medium detents large"#, "`detents` is said twice"),
+                               (#"feed: Feed "Feed" house sheet over detents medium"#, "`over` names what the sheet goes up over"),
                                (#"feed: Feed "Feed" house sheet gate"#, "not both"),
                                (#"feed: Feed "Feed" house sheet default"#, "a sheet is not a tab"),
                                (#"feed: Feed "Feed" house gate default"#, "a gate is not a tab"),

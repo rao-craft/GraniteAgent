@@ -7,6 +7,7 @@
 //            seer: Seer "Seer" SeerMark().frame(width: 30, height: 30) default
 //            wallet: Wallet "Wallet" creditcard sheet
 //            profile: Profile "Profile" person.crop.circle sheet over models
+//            world: World "The World" infinity sheet over seer detents medium large
 //            auth: SignIn "Sign In" person gate
 //            auth.signup -> auth
 //
@@ -14,9 +15,10 @@
 //        its place a view the app has, in UpperCamelCase, drawn once as the tab's image in its own colours), a
 //        word for where it sits when it is not just a tab (`default` the tab a plain launch opens on, `sheet` a sheet
 //        over the tabs, `gate` the page shown instead of them while the call's `gate` holds), for a sheet `over` and
-//        what a launch that names it puts up under it (a tab or another sheet), and after a bar the view the detail
-//        pane shows beside it in the split style. A line `name -> destination` is a launch alias: another name a
-//        launch may give for a destination, dots allowed.
+//        what a launch that names it puts up under it (a tab or another sheet) and `detents` and the heights it rests
+//        at (`medium`, `large`, `fraction(0.6)`, `height(320)`, the first where it goes up), and after a bar the view
+//        the detail pane shows beside it in the split style. A line `name -> destination` is a launch alias: another
+//        name a launch may give for a destination, dots allowed.
 
 import Foundation
 
@@ -62,7 +64,7 @@ enum DestinationLine {
         var place = Destination.Place.tab, isDefault = false, over: String?
         if let at = words.firstIndex(of: "over") {
             let target = at + 1 < words.count ? words[at + 1] : ""
-            guard !target.isEmpty, !marks.contains(target), target != "over" else {
+            guard !target.isEmpty, !marks.contains(target), target != "over", target != "detents" else {
                 throw GraniteError.line(line, "`over` names what the sheet goes up over when a launch names it, a tab or another sheet, like `sheet over models`")
             }
             guard LaunchAlias.isName(target) else { throw GraniteError.line(line, "`over \(target)`: `\(target)` is not a destination's name") }
@@ -70,6 +72,7 @@ enum DestinationLine {
             if words.contains("over") { throw GraniteError.line(line, "`over` is said twice") }
             over = target
         }
+        let detents = try Self.detents(&words, in: line)
         for word in words {
             guard marks.contains(word) else {
                 throw GraniteError.line(line, "after the SF Symbol comes `default`, `sheet` or `gate`, not `\(word)`")
@@ -90,10 +93,37 @@ enum DestinationLine {
         if let over, place != .sheet {
             throw GraniteError.line(line, "`over \(over)` says what a sheet goes up over when a launch names it, and a \(place.rawValue) is not a sheet: say `sheet over \(over)`")
         }
+        if !detents.isEmpty, place != .sheet {
+            let said = detents.map(\.word).joined(separator: " ")
+            throw GraniteError.line(line, "`detents \(said)` names the heights a sheet rests at, and a \(place.rawValue) is not a sheet: say `sheet detents \(said)`")
+        }
         var detailText: String?, detailType: String?
         if let detail { (detailText, detailType) = try viewCall(detail, in: line) }
         return Destination(name: name, view: viewText, viewType: viewType, title: title, symbol: symbol, detail: detailText, detailType: detailType,
-                           place: place, isDefault: isDefault, over: over, drawn: drawn, drawnType: drawnType)
+                           place: place, isDefault: isDefault, over: over, drawn: drawn, drawnType: drawnType, detents: detents)
+    }
+
+    /// The heights after `detents`, read out of `words` up to the next word that says where the destination sits: each
+    /// one a height a sheet rests at, none named twice, and `detents` said once.
+    static func detents(_ words: inout [String], in line: String) throws -> [SheetDetent] {
+        guard let at = words.firstIndex(of: "detents") else { return [] }
+        var end = at + 1
+        while end < words.count, !marks.contains(words[end]), words[end] != "detents", words[end] != "over" { end += 1 }
+        guard end > at + 1 else {
+            throw GraniteError.line(line, "`detents` names the heights the sheet rests at, the first where it goes up: \(SheetDetent.forms), like `sheet detents medium large`")
+        }
+        var detents: [SheetDetent] = []
+        for word in words[(at + 1)..<end] {
+            guard let detent = SheetDetent(word: word) else {
+                throw GraniteError.line(line, "`\(word)` is not a height a sheet rests at: after `detents` come \(SheetDetent.forms)")
+            }
+            if let problem = detent.problem { throw GraniteError.line(line, "`\(word)`: \(problem)") }
+            guard !detents.contains(detent) else { throw GraniteError.line(line, "`\(word)` is named twice after `detents`") }
+            detents.append(detent)
+        }
+        words.removeSubrange(at..<end)
+        if words.contains("detents") { throw GraniteError.line(line, "`detents` is said twice") }
+        return detents
     }
 
     /// A view written where the symbol goes, up to the first space outside its parentheses and quotes, and what

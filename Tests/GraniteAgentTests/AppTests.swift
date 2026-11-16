@@ -209,6 +209,63 @@ final class AppTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("Shared/Utility/AppDestination.swift").path))
     }
 
+    /// A sheet at its own heights (Seer, 2026-11-15): a line's `detents` are the heights its sheet rests at, the first
+    /// where it goes up (a launch's too) with the drag indicator showing, stacked on a tab or a sheet or not stacked at
+    /// all; a sheet whose line names none goes up large with no indicator, as before.
+    func testASheetRestsAtTheHeightsItsLineNamesAndGoesUpAtTheFirst() async throws {
+        let folder = try Fixture.folder()
+        try await Fixture.call(Fixture.seerProject, in: folder)
+        try await Fixture.call(Fixture.account, in: folder)
+        try await Fixture.call(Fixture.signIn, in: folder)
+        for page in Fixture.seerPages + [Fixture.seerSettings] { try await Fixture.call(page, in: folder) }
+        let result = try await Fixture.call(Fixture.seerDetents, in: folder)
+        for note in ["`wallet`, `profile`, `settings` are sheets, with a close button: a page puts one up over whatever is up",
+                     "sheet heights: `wallet` at medium then large; `profile` at fraction(0.6). Each goes up at the first its line names, on a launch too, "
+                        + "with the drag indicator showing", "; `settings` goes up at the large detent alone"] {
+            XCTAssertTrue(result.notes.contains { $0.contains(note) }, "\(note) in \(result.notes)")
+        }
+        let destinations = try read(folder, "Shared/Utility/AppDestination.swift")
+        for line in ["    var detents: [PresentationDetent] {\n        switch self {\n        case .wallet: [.medium, .large]\n        case .profile: [.fraction(0.6)]\n"
+                        + "        default: [.large]\n        }\n    }\n",
+                     "    var dragIndicator: Visibility {\n        switch self {\n        case .wallet, .profile: .visible\n        default: .automatic\n        }\n    }\n"] {
+            XCTAssertTrue(destinations.contains(line), line)
+        }
+        for platform in ["iOS", "macOS"] {
+            let view = try read(folder, "\(platform)/PlatformNavigationView.swift")
+            for line in [".modifier(LayoutSheetHost(level: level + 1))", ".modifier(LayoutSheetDetents(destination: destination))\n            }",
+                         "private struct LayoutSheetDetents: ViewModifier {", "@State private var detent: PresentationDetent",
+                         "_detent = State(initialValue: destination.detents.first ?? .large)",
+                         "content\n            .presentationDetents(Swift.Set(destination.detents), selection: $detent)\n            .presentationDragIndicator(destination.dragIndicator)"] {
+                XCTAssertTrue(view.contains(line), "\(platform): \(line)")
+            }
+            XCTAssertFalse(view.contains(".presentationDetents([.large])"), "\(platform): every sheet goes up at its own heights")
+        }
+        let tests = try read(folder, "Tests/LayoutOpsTests.swift")
+        for line in ["import Foundation\nimport SwiftUI\nimport Testing\n", "@Test func aSheetRestsAtTheHeightsItsLineNamesAndGoesUpAtTheFirst() {",
+                     "#expect(AppDestination.wallet.detents == [.medium, .large], \"-destination wallet goes up at medium\")",
+                     "#expect(AppDestination.profile.detents == [.fraction(0.6)], \"-destination profile goes up at fraction(0.6)\")",
+                     "#expect(AppDestination.profile.dragIndicator == .visible)",
+                     "#expect(AppDestination.settings.detents == [.large], \"a sheet whose line names none goes up large\")",
+                     "#expect(AppDestination.settings.dragIndicator == .automatic)", "state = LayoutService.Center.State(launch: .settings)"] {
+            XCTAssertTrue(tests.contains(line), line)
+        }
+
+        // Sheets that do not stack go up at their own heights through the plain host.
+        var plain = Fixture.seerNavigation
+        plain.destinations = plain.destinations?.map { $0.hasPrefix("wallet:") ? $0 + " detents height(320) large" : $0 }
+        let flat = try await Fixture.call(plain, in: folder)
+        XCTAssertTrue(flat.notes.contains { $0.contains("sheet heights: `wallet` at height(320) then large.") && $0.hasSuffix("; `profile` goes up at the large detent alone") },
+                      "\(flat.notes)")
+        XCTAssertTrue(try read(folder, "Shared/Utility/AppDestination.swift").contains("case .wallet: [.height(320), .large]\n        default: [.large]"))
+        for platform in ["iOS", "macOS"] {
+            let view = try read(folder, "\(platform)/PlatformNavigationView.swift")
+            XCTAssertTrue(view.contains(".sheet(item: layout.binding(\\.sheet) { .sheet($0) }) { destination in"), platform)
+            XCTAssertTrue(view.contains(".modifier(LayoutSheetDetents(destination: destination))\n        }"), platform)
+            XCTAssertTrue(view.contains("private struct LayoutSheetDetents: ViewModifier {"), platform)
+            XCTAssertFalse(view.contains("LayoutSheetHost") || view.contains(".presentationDetents([.large])"), platform)
+        }
+    }
+
     /// With sheets and no default, the tab on screen is still kept between launches, and one that is no longer a tab
     /// reads as the first; a default alone changes only where a plain launch opens.
     func testWithNoDefaultTheTabIsKeptAndADefaultAloneListsEveryDestination() async throws {

@@ -466,8 +466,10 @@ extension NavigationTemplates {
         }
         let opening = shape.opening
         var code = Code()
+        code.line("import Foundation")
+        // A sheet's heights are SwiftUI's `PresentationDetent`s, read by name in the test of them.
+        if shape.hasDetents { code.line("import SwiftUI") }
         code.block("""
-            import Foundation
             import Testing
             @testable import \(module)
 
@@ -547,6 +549,7 @@ extension NavigationTemplates {
                 code.line("#expect(state.sheet == .\(sheet))")
             }
         }
+        if shape.hasDetents { detentTests(&code, shape: shape) }
         if let gate = shape.gate {
             code.line()
             code.scope("@Test func theGateHoldsOnAPlainLaunchAndOnItsOwnName() {") { code in
@@ -637,6 +640,23 @@ extension NavigationTemplates {
                 code.line((index == 0 ? "var state" : "state") + " = LayoutService.Center.State(launch: .\(name))")
                 code.line("#expect(state.destination == .\(tab), \"-destination \(name)\")")
                 code.line("#expect(state.sheets == [" + chain.map { ".\($0)" }.joined(separator: ", ") + "], \"-destination \(name)\")")
+            }
+        }
+    }
+
+    /// Each sheet whose line says `detents` rests at the heights it names, the first where it goes up (a launch's too),
+    /// and shows the drag indicator; one whose line names none goes up large with no indicator, as before.
+    private static func detentTests(_ code: inout Code, shape: Shape) {
+        code.line()
+        code.scope("@Test func aSheetRestsAtTheHeightsItsLineNamesAndGoesUpAtTheFirst() {") { code in
+            for sheet in shape.sheets {
+                guard let detents = shape.detents[sheet] else { continue }
+                code.line("#expect(AppDestination.\(sheet).detents == [" + detents.map(\.swift).joined(separator: ", ") + "], \"-destination \(sheet) goes up at \(detents[0].word)\")")
+                code.line("#expect(AppDestination.\(sheet).dragIndicator == .visible)")
+            }
+            if let large = shape.sheets.first(where: { shape.detents[$0] == nil }) {
+                code.line("#expect(AppDestination.\(large).detents == [.large], \"a sheet whose line names none goes up large\")")
+                code.line("#expect(AppDestination.\(large).dragIndicator == .automatic)")
             }
         }
     }

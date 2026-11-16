@@ -146,6 +146,44 @@ then, once Seer, Models, Profile and The World are made with `layout.present(.wo
 - not run on a simulator: the stacked sheets going up unanimated, the passthrough window and the drawn tab image are
   compiled and unit-tested, not yet seen on a screen
 
+### Seer's sheets at their own heights: a medium sheet over a tab, a fraction sheet stacked on it
+
+*2026-11-15 · the suite and the gated build, no model*
+
+The original rests World, Echoes, Contributions, Threads and Looms at medium with room for large, Atlas at medium
+(its launch over the Library tab), Model at 0.6 of the screen and Edit Model at 0.78 then large, each with its drag
+indicator; its reference shots of `world`, `echoes`, `contributions`, `threads` and `atlas` are at medium.
+
+**The call**, on a Seer made by the project, account, Sign In and placeholder-page calls (`Tests/GraniteAgentTests/Support/Fixture.swift`,
+`seerDetents`), then the Seer page with a button that puts Wallet up (`seerWithWallet`):
+
+```json
+{
+  "make": "navigation",
+  "destinations": [
+    "auth: SignIn \"Sign In\" person gate",
+    "library: Library \"Library\" books.vertical",
+    "seer: Seer \"Seer\" sparkles default",
+    "models: Models \"Models\" cpu",
+    "wallet: Wallet \"Wallet\" creditcard sheet over seer detents medium large",
+    "profile: Profile \"Profile\" person.crop.circle sheet over wallet detents fraction(0.6)",
+    "settings: Settings \"Settings\" gearshape sheet over profile"
+  ],
+  "gate": "account.state.session == nil",
+  "relays": ["account: AccountService"]
+}
+```
+
+**Checks**:
+- `swift test`: 95 tests, 5 skipped (the gated builds), 0 failures; `SameBytesTests` holds the twelve calls of 4e59a5e
+  to their bytes, and Seer's shell, its drawn chrome and its toast window to the bytes of 9b5bc8f, the commit before
+  `detents`
+- `GRANITE_BUILD=1 swift test --filter GraniteBuildTests`: 5 tests, 0 failures; the call above built and its tests run
+  on macOS (`aSheetRestsAtTheHeightsItsLineNamesAndGoesUpAtTheFirst`, `aLaunchThatAsksForASheetPutsUpWhatItGoesOver`,
+  `aSheetGoesUpOverWhateverIsUpAndClosesAlone`: passed), built for the iOS simulator with no warning in the navigation
+- not run on a simulator: Wallet up at medium, Profile at 0.6 on it and their drag indicators are compiled and
+  unit-tested, not yet seen on a screen
+
 ## Combinations
 
 Level 3 of the regime (`TESTING-REGIME.md`): one prompt a turn chaining agents, run through Craft on a local model,

@@ -160,15 +160,25 @@ struct NavigationMake {
         } else {
             plan.notes.append("the selected destination persists in LayoutService; a menu or a page moves the app with `layout.select(.\(first))`")
         }
+        // With `detents` each sheet's heights get a note of their own, so the large detent is not said of them all.
+        let closing = shape.hasDetents ? "with a close button" : "at the large detent with a close button"
         if let sheet = shape.sheets.first, !shape.isStacked {
             plan.notes.append(shape.sheets.map { "`\($0)`" }.joined(separator: ", ") + (shape.sheets.count == 1 ? " is a sheet" : " are sheets")
-                              + " over the tabs, at the large detent with a close button: a page opens one with `layout.present(.\(sheet))`, "
+                              + " over the tabs, \(closing): a page opens one with `layout.present(.\(sheet))`, "
                               + "and `-destination \(sheet)` opens `\(first)` with it up")
         } else if let sheet = shape.sheets.first {
             plan.notes.append(shape.sheets.map { "`\($0)`" }.joined(separator: ", ") + (shape.sheets.count == 1 ? " is a sheet" : " are sheets")
-                              + ", at the large detent with a close button: a page puts one up over whatever is up, the tab or another sheet, with "
+                              + ", \(closing): a page puts one up over whatever is up, the tab or another sheet, with "
                               + "`layout.present(.\(sheet))`, and its close button or a swipe takes down only it")
             plan.notes += overNotes
+        }
+        if shape.hasDetents {
+            let named = shape.sheets.compactMap { sheet in shape.detents[sheet].map { "`\(sheet)` at " + $0.map(\.word).joined(separator: " then ") } }
+            let large = shape.sheets.filter { shape.detents[$0] == nil }.map { "`\($0)`" }
+            plan.notes.append("sheet heights: " + named.joined(separator: "; ") + ". Each goes up at the first its line names, on a launch too, "
+                              + "with the drag indicator showing, and rests where the person drags it (`AppDestination.detents`, "
+                              + "`.presentationDetents(_:selection:)`)" + (large.isEmpty ? "" : "; " + large.joined(separator: ", ")
+                              + (large.count == 1 ? " goes" : " go") + " up at the large detent alone"))
         }
         if !resolved.isEmpty {
             let pairs = Dictionary(grouping: resolved, by: \.target).sorted { a, b in

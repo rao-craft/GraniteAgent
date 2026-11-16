@@ -5,8 +5,9 @@ import XCTest
 /// The output built and run as a person's app would be: a recipe app made call by call (a project, a kit, services
 /// with an expression and with a body from the model, every page layout, navigation and modals), its Loom layout
 /// checked, built and tested on macOS, built for the iOS simulator, its kit tested with SwiftPM; Seer's shell (a
-/// default tab, sheets and a sign-in gate) built and tested the same way, and again with launch aliases, a sheet over a
-/// tab, a sheet over a sheet and the toast window; and a fresh Xcode project linked and built.
+/// default tab, sheets and a sign-in gate) built and tested the same way, again with launch aliases, a sheet over a
+/// tab, a sheet over a sheet and the toast window, and again with sheets at their own heights, a medium one over a tab
+/// and a fraction one stacked on it; and a fresh Xcode project linked and built.
 /// Gated (`GRANITE_BUILD=1`): a build takes minutes and fetches Granite.
 final class GraniteBuildTests: XCTestCase {
     /// Where builds keep their packages between runs, under the process's temporary files.
@@ -132,6 +133,40 @@ final class GraniteBuildTests: XCTestCase {
         let written = ["ModalHosting.swift", "PlatformNavigationView.swift", "AppDestination.swift", "LayoutService"]
         XCTAssertFalse(iOS.log.components(separatedBy: "\n").contains { line in line.contains(": warning: ") && written.contains { line.contains($0) } },
                        "the toast window and the navigation build for iOS without a warning: \(iOS.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")
+        if testRun?.totalFailureCount == 0 { try? FileManager.default.removeItem(at: derived) }
+    }
+
+    /// Seer's sheets at their own heights (2026-11-15): Wallet over the middle tab at medium, then large; Profile stacked
+    /// on it at 0.6 of the screen, each with the drag indicator; Settings on Profile at the large detent alone; the Seer
+    /// page's button putting Wallet up. Built and its tests run on macOS (the heights' test and the stacked launch among
+    /// them), built for the iOS simulator, where `.presentationDetents(_:selection:)` puts each sheet up at its first.
+    func testSheetsAtTheirOwnHeightsAMediumOneOverATabAndAFractionOneOnItBuild() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["GRANITE_BUILD"] == "1", "set GRANITE_BUILD=1 to build the output")
+        let folder = try Fixture.folder()
+        let app = folder.appendingPathComponent("Seer")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        try await Fixture.call(Fixture.seerProject, in: app)
+        try await Fixture.call(Fixture.account, in: app)
+        try await Fixture.call(Fixture.signIn, in: app)
+        for page in Fixture.seerPages + [Fixture.seerSettings] { try await Fixture.call(page, in: app) }
+        try await Fixture.call(Fixture.seerDetents, in: app)
+        try await Fixture.call(Fixture.seerWithWallet, in: app)
+
+        let derived = folder.appendingPathComponent("DerivedData")
+        let mac = try xcodebuild(["-project", "Seer.xcodeproj", "-scheme", "Seer-macOS", "-destination", "platform=macOS", "CODE_SIGNING_ALLOWED=NO",
+                                  "-skip-testing:SeerUITests-macOS", "build", "test"], in: app, derived: derived, home: folder.appendingPathComponent("home"))
+        XCTAssertEqual(mac.status, 0, Shell.digest(mac.log))
+        XCTAssertTrue(mac.log.contains("** TEST SUCCEEDED **"), Shell.digest(mac.log))
+        for test in ["aSheetRestsAtTheHeightsItsLineNamesAndGoesUpAtTheFirst", "aLaunchThatAsksForASheetPutsUpWhatItGoesOver", "aSheetGoesUpOverWhateverIsUpAndClosesAlone"] {
+            XCTAssertTrue(mac.log.contains("Test \(test)() passed"), test)
+        }
+        XCTAssertFalse(mac.log.contains(": warning: "), "the app builds without a warning: \(mac.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")
+        let iOS = try xcodebuild(["-project", "Seer.xcodeproj", "-scheme", "Seer-iOS", "-destination", "generic/platform=iOS Simulator", "build", "build-for-testing"],
+                                 in: app, derived: derived)
+        XCTAssertEqual(iOS.status, 0, Shell.digest(iOS.log))
+        let written = ["PlatformNavigationView.swift", "AppDestination.swift", "LayoutService"]
+        XCTAssertFalse(iOS.log.components(separatedBy: "\n").contains { line in line.contains(": warning: ") && written.contains { line.contains($0) } },
+                       "the sheets' heights build for iOS without a warning: \(iOS.log.components(separatedBy: "\n").filter { $0.contains(": warning: ") }.prefix(5))")
         if testRun?.totalFailureCount == 0 { try? FileManager.default.removeItem(at: derived) }
     }
 

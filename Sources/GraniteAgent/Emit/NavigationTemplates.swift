@@ -7,7 +7,7 @@
 //  PIN:  A CALL WITH NO `default`, `sheet` OR `gate` WRITES WHAT IT WROTE BEFORE THOSE WORDS, byte for byte: every
 //        addition below is gated on the `Shape` saying it. So does a call with no launch alias and no `over`
 //        (`SameBytesTests` holds every earlier call to its bytes), and one with no drawn image, `tabBar`, `tint`,
-//        `tabFeedback` or `overlays`.
+//        `tabFeedback` or `overlays`, and one whose sheets name no `detents`.
 
 import Foundation
 
@@ -37,6 +37,8 @@ enum NavigationTemplates {
         var feedback: String?
         /// Views drawn over the tabs, bottom to top (`overlays`).
         var overlays: [String] = []
+        /// The heights each sheet whose line says `detents` rests at, the first where it goes up, by their cases.
+        var detents: [String: [SheetDetent]] = [:]
 
         init(_ destinations: [Destination], aliases: [LaunchAlias] = []) {
             let tabs = destinations.filter { $0.place == .tab }
@@ -48,6 +50,7 @@ enum NavigationTemplates {
             self.aliases = aliases.map { LaunchAlias(name: $0.name, target: SwiftName.member($0.target)) }
             for destination in destinations where destination.place == .sheet {
                 if let under = destination.over { over[SwiftName.member(destination.name)] = SwiftName.member(under) }
+                if !destination.detents.isEmpty { detents[SwiftName.member(destination.name)] = destination.detents }
             }
             isDrawn = destinations.contains { $0.drawn != nil }
         }
@@ -57,6 +60,9 @@ enum NavigationTemplates {
         /// Whether a sheet's line says `over`: the sheets then stack, a launch puts up what each goes over, and in use
         /// one goes up over whatever is up.
         var isStacked: Bool { !over.isEmpty }
+        /// Whether a sheet's line says `detents`: each sheet then goes up at its own heights, through
+        /// `LayoutSheetDetents`, in place of the large detent alone.
+        var hasDetents: Bool { !detents.isEmpty }
         /// The aliases of the gate's destination: a launch that names one holds the gate as the gate's own name does.
         var gateAliases: [String] { aliases.filter { $0.target == gate }.map(\.name) }
         /// Whether some destination is not a tab, so the tab bar and the sidebar list `AppDestination.tabs`.
@@ -220,7 +226,7 @@ enum NavigationTemplates {
         if shape.isStacked {
             code.line(".modifier(LayoutSheetHost(level: 0))")
         } else if !shape.sheets.isEmpty {
-            sheetHost(&code, mac: false)
+            sheetHost(&code, mac: false, detents: shape.hasDetents)
         }
         code.close()
         if style == .adaptive || style == .tabs {
@@ -260,7 +266,8 @@ enum NavigationTemplates {
         }
         selection(&code)
         code.close()
-        if shape.isStacked { stackedSheetHost(&code, mac: false) }
+        if shape.isStacked { stackedSheetHost(&code, mac: false, detents: shape.hasDetents) }
+        if shape.hasDetents { sheetDetents(&code) }
         code.line("#endif")
         return code.text
     }
@@ -304,12 +311,13 @@ enum NavigationTemplates {
         if shape.isStacked {
             code.line(".modifier(LayoutSheetHost(level: 0))")
         } else if !shape.sheets.isEmpty {
-            sheetHost(&code, mac: true)
+            sheetHost(&code, mac: true, detents: shape.hasDetents)
         }
         code.close()
         selection(&code)
         code.close()
-        if shape.isStacked { stackedSheetHost(&code, mac: true) }
+        if shape.isStacked { stackedSheetHost(&code, mac: true, detents: shape.hasDetents) }
+        if shape.hasDetents { sheetDetents(&code) }
         code.line("#endif")
         return code.text
     }
@@ -328,9 +336,10 @@ enum NavigationTemplates {
         for overlay in shape.overlays { code.line(".overlay { \(overlay) }") }
     }
 
-    /// The sheet over the tabs, from LayoutService's `sheet`: the page in a stack of its own, at the large detent,
-    /// closed by its button or a swipe down (the binding writes nil back), and on the Mac at a window's size.
-    private static func sheetHost(_ code: inout Code, mac: Bool) {
+    /// The sheet over the tabs, from LayoutService's `sheet`: the page in a stack of its own, at the large detent (with
+    /// `detents`, at its own heights), closed by its button or a swipe down (the binding writes nil back), and on the Mac
+    /// at a window's size.
+    private static func sheetHost(_ code: inout Code, mac: Bool, detents: Bool) {
         code.scope(".sheet(item: layout.binding(\\.sheet) { .sheet($0) }) { destination in") { code in
             code.scope("NavigationStack {") { code in
                 code.line("destination.view")
@@ -343,15 +352,46 @@ enum NavigationTemplates {
                 code.dedent()
             }
             if mac { code.line(".frame(minWidth: Routes.windowSize.width, minHeight: Routes.windowSize.height)") }
-            code.line(".presentationDetents([.large])")
+            heights(&code, detents: detents)
         }
     }
 
+    /// A sheet's heights: the large detent alone, as before `detents`, or with `detents` the sheet's own.
+    private static func heights(_ code: inout Code, detents: Bool) {
+        code.line(detents ? ".modifier(LayoutSheetDetents(destination: destination))" : ".presentationDetents([.large])")
+    }
+
+    /// The heights a sheet rests at (a shape that says `detents`): the ones its line names, up at the first of them, a
+    /// launch's sheets too, with the drag indicator showing; the large detent alone for a sheet whose line names none.
+    private static func sheetDetents(_ code: inout Code) {
+        code.line()
+        code.doc("A sheet at the heights its line names: up at the first of them, on a launch too, with the drag indicator showing, "
+                 + "then where the person drags it; a sheet whose line names none goes up large.")
+        code.open("private struct LayoutSheetDetents: ViewModifier {")
+        code.line("let destination: AppDestination")
+        code.line("/// The height the sheet rests at: the first of its detents when it goes up.")
+        code.line("@State private var detent: PresentationDetent")
+        code.line()
+        code.scope("init(destination: AppDestination) {") { code in
+            code.line("self.destination = destination")
+            code.line("_detent = State(initialValue: destination.detents.first ?? .large)")
+        }
+        code.line()
+        code.scope("func body(content: Content) -> some View {") { code in
+            code.line("content")
+            code.indent()
+            code.line(".presentationDetents(Swift.Set(destination.detents), selection: $detent)")
+            code.line(".presentationDragIndicator(destination.dragIndicator)")
+            code.dedent()
+        }
+        code.close()
+    }
+
     /// The sheets LayoutService holds, one over another (a shape that says `over`): the one at `level` in a stack of
-    /// its own with a close button, at the large detent, and over it the next. A launch's sheets go up at once and
-    /// unanimated, each once the one under it is up, as if the person had gone there; in use one slides up over
-    /// whatever is up, and a swipe down takes down it and every one over it.
-    private static func stackedSheetHost(_ code: inout Code, mac: Bool) {
+    /// its own with a close button, at the large detent (with `detents`, at its own heights), and over it the next. A
+    /// launch's sheets go up at once and unanimated, each once the one under it is up, as if the person had gone there;
+    /// in use one slides up over whatever is up, and a swipe down takes down it and every one over it.
+    private static func stackedSheetHost(_ code: inout Code, mac: Bool, detents: Bool) {
         code.line()
         code.doc("The sheet at `level` of LayoutService's sheets, over the view: the page in a stack of its own with a close button, "
                  + "and over it the next. A launch's sheets go up at once, unanimated, each over the one under it, as if the person had "
@@ -379,7 +419,7 @@ enum NavigationTemplates {
             }
             code.line(".modifier(LayoutSheetHost(level: level + 1))")
             if mac { code.line(".frame(minWidth: Routes.windowSize.width, minHeight: Routes.windowSize.height)") }
-            code.line(".presentationDetents([.large])")
+            heights(&code, detents: detents)
         }
         code.scope(".task {") { code in
             code.line("// A launch's sheets: each goes up once the one under it is up, without animation.")
@@ -470,6 +510,26 @@ enum NavigationTemplates {
                 code.switchOn("self") { code in
                     for sheet in shape.sheets { if let under = shape.over[sheet] { code.line("case .\(sheet): .\(under)") } }
                     code.line("default: nil")
+                }
+            }
+            code.line()
+        }
+        if shape.hasDetents {
+            let named = shape.sheets.filter { shape.detents[$0] != nil }
+            code.line("/// The heights it rests at as a sheet, the first where it goes up, on a launch too: as its line names them, else")
+            code.line("/// the large detent alone.")
+            code.scope("var detents: [PresentationDetent] {") { code in
+                code.switchOn("self") { code in
+                    for sheet in named { code.line("case .\(sheet): [" + (shape.detents[sheet] ?? []).map(\.swift).joined(separator: ", ") + "]") }
+                    code.line("default: [.large]")
+                }
+            }
+            code.line()
+            code.line("/// Whether its sheet shows the drag indicator: one whose line names its heights does.")
+            code.scope("var dragIndicator: Visibility {") { code in
+                code.switchOn("self") { code in
+                    code.line("case " + named.map { ".\($0)" }.joined(separator: ", ") + ": .visible")
+                    code.line("default: .automatic")
                 }
             }
             code.line()
