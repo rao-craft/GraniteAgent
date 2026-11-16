@@ -1,7 +1,8 @@
 //  WHAT: A new app's Xcode project, adapted from Granite's template: objectVersion 77 with synchronized folders
 //        (Shared, Components, Services, iOS, macOS for the apps; Tests and UITests for their test targets), an app
 //        target, a unit-test target hosted by it and a UI-test target per platform, Swift 5 language mode (reducers
-//        hold relays), iOS 17 and macOS 14, a generated Info.plist; and the shared schemes that build and test them.
+//        hold relays), iOS 17 and macOS 14 or the call's `platforms`, a generated Info.plist; and the shared schemes
+//        that build and test them.
 //  PIN:  A FILE UNDER A SYNCHRONIZED FOLDER JOINS ITS TARGETS WITH NO EDIT. Every later call writes into these
 //        folders and leaves the project file alone; only packages are edited in.
 
@@ -22,7 +23,8 @@ enum XcodeTemplates {
         + ["APP_IOS", "APP_MAC", "TESTS_IOS", "TESTS_MAC", "UITESTS_IOS", "UITESTS_MAC"].flatMap { ["SRC_\($0)", "FW_\($0)", "RES_\($0)"] }
 
     /// The project file, its objects named by `id` (a token → a fresh id).
-    static func project(name: String, bundleId: String, team: String, id: (String) -> String) -> String {
+    static func project(name: String, bundleId: String, team: String, iOS: String = "17.0", macOS: String = "14.0",
+                        id: (String) -> String) -> String {
         let q = Pbxproj.quoted
         var text = projectTemplate
         for token in tokens { text = text.replacingOccurrences(of: "@@\(token)@@", with: id(token)) }
@@ -38,6 +40,8 @@ enum XcodeTemplates {
             // so a build that names no scheme builds the app that needs no team.
             .replacingOccurrences(of: "@@MAC_SIGN@@\n", with: team.isEmpty ? "\t\t\t\tCODE_SIGN_IDENTITY = \"-\";\n" : "")
             .replacingOccurrences(of: "@@DISPLAY@@", with: "\"\(name)\"")
+            .replacingOccurrences(of: "IPHONEOS_DEPLOYMENT_TARGET = 17.0;", with: "IPHONEOS_DEPLOYMENT_TARGET = \(iOS);")
+            .replacingOccurrences(of: "MACOSX_DEPLOYMENT_TARGET = 14.0;", with: "MACOSX_DEPLOYMENT_TARGET = \(macOS);")
     }
 
     static let workspace = """

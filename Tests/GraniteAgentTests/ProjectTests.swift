@@ -57,6 +57,26 @@ final class ProjectTests: XCTestCase {
         }
         XCTAssertEqual(project.settings(of: byName["Recipes-iOS"]!)?["IPHONEOS_DEPLOYMENT_TARGET"]?.string, "17.0")
         XCTAssertEqual(project.settings(of: byName["Recipes-macOS"]!)?["MACOSX_DEPLOYMENT_TARGET"]?.string, "14.0")
+        // `platforms` moves every target of its OS, as a person or a manifest writes the line.
+        var newer = Fixture.project
+        newer.platforms = ["iOS 26", ".macOS(.v15_4)"]
+        let (answer, _, raised) = try await made(newer)
+        for target in raised.targets {
+            let setting = target.name.contains("iOS") ? "IPHONEOS_DEPLOYMENT_TARGET" : "MACOSX_DEPLOYMENT_TARGET"
+            XCTAssertEqual(raised.settings(of: target)?[setting]?.string, target.name.contains("iOS") ? "26.0" : "15.4", target.name)
+        }
+        XCTAssertTrue(answer.notes.contains("the apps run on iOS 26.0 and macOS 15.4 and later"), "\(answer.notes)")
+        for (line, reason) in [("iOS 16", "`iOS 16`: Granite needs iOS 17 or later"), ("iOS", "`iOS`: say the lowest version it runs on, like `iOS 26`"),
+                               ("watchOS 11", "`watchOS 11`: the project makes an iOS and a macOS app, so `platforms` names those, like `iOS 26`")] {
+            var refused = Fixture.project
+            refused.platforms = [line]
+            do {
+                _ = try await made(refused)
+                XCTFail("`\(line)` is refused")
+            } catch {
+                XCTAssertTrue("\(error)".contains(reason), "\(error)")
+            }
+        }
         XCTAssertEqual(project.settings(of: byName["Recipes-macOS"]!)?["ENABLE_OUTGOING_NETWORK_CONNECTIONS"]?.string, "YES")
         XCTAssertEqual(project.settings(of: byName["RecipesTests-iOS"]!)?["TEST_HOST"]?.string,
                        "$(BUILT_PRODUCTS_DIR)/Recipes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Recipes")

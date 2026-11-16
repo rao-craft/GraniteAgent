@@ -20,6 +20,7 @@ final class GraniteAgentTests: XCTestCase {
             .init(name: "name", schema: .string, required: false),
             .init(name: "bundleId", schema: .string, required: false),
             .init(name: "team", schema: .string, required: false),
+            .init(name: "platforms", schema: lines, required: false),
             .init(name: "type", schema: .string, required: false),
             .init(name: "into", schema: .string, required: false),
             .init(name: "state", schema: lines, required: false),

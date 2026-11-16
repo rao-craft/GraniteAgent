@@ -29,6 +29,13 @@ struct ProjectMake {
         }
         let root = (input.root ?? "Home").trimmingCharacters(in: .whitespaces)
         problems += Self.rootProblems(root, app: name)
+        var lowest = Self.lowestDefault
+        for line in input.platforms ?? [] {
+            switch Self.platform(line) {
+            case .success(let (os, version)): lowest[os] = version
+            case .failure(let refusal): problems.append(refusal.reason)
+            }
+        }
         var packages: [PackageDependency] = []
         for line in input.packages ?? [] {
             do { packages.append(try PackageLine.parse(line)) } catch { problems.append("\(error)") }
@@ -42,7 +49,8 @@ struct ProjectMake {
         guard problems.isEmpty else { throw GraniteError.refused(problems) }
 
         var plan = Plan()
-        let (projectText, ids) = try Self.projectFile(name: name, bundleId: bundleId, team: team, packages: packages)
+        let (projectText, ids) = try Self.projectFile(name: name, bundleId: bundleId, team: team, packages: packages,
+                                                      iOS: lowest["iOS"]!, macOS: lowest["macOS"]!)
         let project = folder.appendingPathComponent("\(name).xcodeproj")
         plan.write(project.appendingPathComponent("project.pbxproj"), projectText, role: .other)
         plan.write(project.appendingPathComponent("project.xcworkspace/contents.xcworkspacedata"), XcodeTemplates.workspace, role: .other)
@@ -75,6 +83,7 @@ struct ProjectMake {
         plan.notes.append("an app that uses Swift packages builds only by a scheme: give Craft this project's build command, `xcodebuild -scheme \(name)-macOS -destination platform=macOS build` (and `test` for its tests)")
         plan.notes.append("a file written under Shared, Components, Services, iOS, macOS, Tests or UITests joins its targets with no project edit")
         if !packages.isEmpty { plan.notes.append("linked \(packages.flatMap(\.products).joined(separator: ", ")) into both apps") }
+        if lowest != Self.lowestDefault { plan.notes.append("the apps run on iOS \(lowest["iOS"]!) and macOS \(lowest["macOS"]!) and later") }
         plan.notes.append("next: the app's services (`make: service`), its pages (`make: component`), then `make: navigation` and `make: modals`")
         return plan
     }
@@ -86,8 +95,44 @@ struct ProjectMake {
         return taken.contains(root) ? ["the root page cannot be named `\(root)`: the app or SwiftUI already has a type by that name"] : []
     }
 
+    /// The lowest OS each app runs on when the call names none: what Granite itself needs.
+    static let lowestDefault = ["iOS": "17.0", "macOS": "14.0"]
+
+    struct PlatformRefusal: Error { let reason: String }
+
+    /// One `platforms` line: the OS it names (`iOS` or `macOS`) and its version as Xcode writes it (`26.0`), or why not.
+    /// Read as a person or a package manifest writes it: `iOS 26`, `iOS 26.0`, `macOS 15.4`, `.iOS(.v26)`.
+    ///
+    /// PIN: THE PROJECT RUNS WHERE THE APP'S APIS DO (Seer R8 wire check, 2026-11-15). The project was always iOS 17,
+    /// and the Void's `.glassEffect()` (iOS 26) failed the build once nothing else did: `'glassEffect(_:in:)' is only
+    /// available in iOS 26.0 or newer`. Seer itself is an iOS 26 app.
+    static func platform(_ line: String) -> Result<(String, String), PlatformRefusal> {
+        let text = line.trimmingCharacters(in: .whitespaces)
+        let pattern = #"^\.?(ios|macos)\s*\(?\s*\.?v?(\d+)(?:[._](\d+))?\s*\)?$"#
+        guard let match = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+            .firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else {
+            let os = text.split(separator: " ").first.map(String.init) ?? text
+            if ["ios", "macos"].contains(os.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))) {
+                return .failure(PlatformRefusal(reason: "`\(text)`: say the lowest version it runs on, like `iOS 26`"))
+            }
+            return .failure(PlatformRefusal(reason: "`\(text)`: the project makes an iOS and a macOS app, so `platforms` names those, like `iOS 26`"))
+        }
+        func group(_ index: Int) -> String? {
+            Range(match.range(at: index), in: text).map { String(text[$0]) }
+        }
+        let os = group(1)!.lowercased() == "ios" ? "iOS" : "macOS"
+        let major = Int(group(2)!)!
+        let version = "\(major).\(group(3) ?? "0")"
+        let floor = Int(lowestDefault[os]!.split(separator: ".")[0])!
+        guard major >= floor else {
+            return .failure(PlatformRefusal(reason: "`\(text)`: Granite needs \(os) \(floor) or later"))
+        }
+        return .success((os, version))
+    }
+
     /// The project file, its objects given fresh ids, with Granite and `packages` linked into both apps.
-    static func projectFile(name: String, bundleId: String, team: String, packages: [PackageDependency]) throws -> (String, [String: String]) {
+    static func projectFile(name: String, bundleId: String, team: String, packages: [PackageDependency],
+                            iOS: String = lowestDefault["iOS"]!, macOS: String = lowestDefault["macOS"]!) throws -> (String, [String: String]) {
         var used: Set<String> = []
         var ids: [String: String] = [:]
         for token in XcodeTemplates.tokens {
@@ -98,7 +143,7 @@ struct ProjectMake {
             used.insert(id)
             ids[token] = id
         }
-        var project = try Pbxproj(XcodeTemplates.project(name: name, bundleId: bundleId, team: team) { ids[$0] ?? $0 })
+        var project = try Pbxproj(XcodeTemplates.project(name: name, bundleId: bundleId, team: team, iOS: iOS, macOS: macOS) { ids[$0] ?? $0 })
         let granite = try project.remotePackage(GranitePin.url, requirement: .revision(GranitePin.revision), name: "Granite")
         for target in [ids["APP_IOS"]!, ids["APP_MAC"]!] {
             for product in GranitePin.products { try project.link(product, package: granite, into: target) }

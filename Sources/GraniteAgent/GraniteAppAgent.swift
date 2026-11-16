@@ -23,6 +23,8 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         public var bundleId: String?
         /// The Apple team the app signs with.
         public var team: String?
+        /// The lowest OS each app runs on, one a line: `iOS 26`, `macOS 26`; iOS 17 and macOS 14 when left out.
+        public var platforms: [String]?
         /// The service (`Feed` is `FeedService`) or the page (`Feed`) to make.
         public var type: String?
         /// The folder the files go in, relative to the host's.
@@ -65,13 +67,13 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         /// The host's folder.
         public var directory: String?
 
-        public init(make: GraniteMake, name: String? = nil, bundleId: String? = nil, team: String? = nil, type: String? = nil,
+        public init(make: GraniteMake, name: String? = nil, bundleId: String? = nil, team: String? = nil, platforms: [String]? = nil, type: String? = nil,
                     into: String? = nil, state: [String]? = nil, events: [String]? = nil, relays: [String]? = nil,
                     layout: GraniteLayout? = nil, shows: [String]? = nil, actions: [String]? = nil, views: [String]? = nil,
                     body: String? = nil, destinations: [String]? = nil, gate: String? = nil, style: GraniteStyle? = nil, root: String? = nil,
                     packages: [String]? = nil, imports: [String]? = nil, persist: Bool? = nil, notes: String? = nil, rounds: Int? = nil,
                     directory: String? = nil) {
-            self.make = make; self.name = name; self.bundleId = bundleId; self.team = team; self.type = type; self.into = into
+            self.make = make; self.name = name; self.bundleId = bundleId; self.team = team; self.platforms = platforms; self.type = type; self.into = into
             self.state = state; self.events = events; self.relays = relays; self.layout = layout; self.shows = shows; self.body = body
             self.actions = actions; self.views = views; self.destinations = destinations; self.gate = gate; self.style = style; self.root = root
             self.packages = packages; self.imports = imports; self.persist = persist; self.notes = notes; self.rounds = rounds
@@ -79,7 +81,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         }
 
         private enum CodingKeys: String, CodingKey, CaseIterable {
-            case make, name, bundleId, team, type, into, state, events, relays, layout, shows, actions, views, body, destinations
+            case make, name, bundleId, team, platforms, type, into, state, events, relays, layout, shows, actions, views, body, destinations
             case gate, style, root, packages, imports, persist, notes, rounds, directory
         }
 
@@ -98,6 +100,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
             "routes": "destinations", "tabs": "destinations", "sheets": "destinations", "default": "destinations", "condition": "gate",
             "subviews": "views", "rows": "shows", "items": "shows",
             "bundle": "bundleId", "bundleID": "bundleId", "folder": "into", "path": "into", "kind": "make",
+            "deploymentTarget": "platforms", "deployment": "platforms", "minimumOS": "platforms",
         ]
 
         /// PIN: a field granite does not take is refused, never dropped. A service whose events came as `endpoints` (the
@@ -122,6 +125,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
             name = try c.decodeIfPresent(String.self, forKey: .name)
             bundleId = try c.decodeIfPresent(String.self, forKey: .bundleId)
             team = try c.decodeIfPresent(String.self, forKey: .team)
+            platforms = try Self.lines(c, .platforms)
             type = try c.decodeIfPresent(String.self, forKey: .type)
             into = try c.decodeIfPresent(String.self, forKey: .into)
             state = try Self.lines(c, .state)
@@ -156,7 +160,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
             if keys.contains("destinations") { return .navigation }
             if keys.contains("events") { return .service }
             if !keys.isDisjoint(with: ["layout", "shows", "actions", "views", "body"]) { return .component }
-            if !keys.isDisjoint(with: ["bundleId", "team"]) { return .project }
+            if !keys.isDisjoint(with: ["bundleId", "team", "platforms"]) { return .project }
             throw GraniteError.refused(["the call has no `make`: add what it makes, one of "
                 + GraniteMake.allCases.map { "`\($0.rawValue)`" }.joined(separator: ", ")])
         }
@@ -198,6 +202,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         "name": "the app's or the kit's name, letters and digits, like `Recipes`: project and package",
         "bundleId": "the app's bundle identifier; com.example.<name> when left out: project",
         "team": "the 10-character Apple team id the app signs with: project",
+        "platforms": "the lowest OS each app runs on, one a line: `iOS 26`, `macOS 26`; iOS 17 and macOS 14 when left out: project",
         "type": "the service (`Feed` makes FeedService) or the page (`Feed`) to make",
         "into": "the folder, relative to the project; Services/<Type> or Components/<Type> when left out; a kit's folder (`Packages/RecipeKit`) puts a public service in the kit",
         "state": "fields, one a line, in the models syntax: `posts [Post] = []`, `selected String?`; a page's `let post Post` is an input it is made with",
