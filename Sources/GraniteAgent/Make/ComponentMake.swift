@@ -407,6 +407,34 @@ struct ComponentMake {
                                 + (actions.isEmpty ? "" : " (it has " + actions.sorted().map { "`\($0)()`" }.joined(separator: ", ") + ")"))
             }
             problems += Self.stateReads(in: body, spec: spec, inputs: inputs)
+            problems += Self.unawaited(in: body, actions: spec.actions)
+        }
+        return problems
+    }
+
+    /// The page's actions a body calls without `try await`. They are `async throws` (`ComponentEmitter.actionsFile`),
+    /// so a bare `signOut()` in a `Button`, or `await load()` with no `try`, does not build.
+    ///
+    /// PIN: A PAGE'S ACTIONS ARE AWAITED (Seer R5, 2026-11-15). Profile's body, written by the model five times, called
+    /// `Button("Sign Out") { signOut() }`; it was refused for another reason, and would have failed the build once
+    /// accepted.
+    static func unawaited(in body: String, actions: [Action]) -> [String] {
+        let text = body as NSString
+        var problems: [String] = []
+        for name in actions.map({ SwiftName.member($0.name) }) {
+            guard let regex = try? NSRegularExpression(pattern: #"(?<![\w.])"# + NSRegularExpression.escapedPattern(for: name) + #"\s*\("#) else { continue }
+            var bare = false, untried = false
+            for match in regex.matches(in: body, range: NSRange(location: 0, length: text.length)) {
+                let before = text.substring(to: match.range.location).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard before.hasSuffix("await") else { bare = true; continue }
+                let tried = String(before.dropLast("await".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !(tried.hasSuffix("try") || tried.hasSuffix("try?") || tried.hasSuffix("try!")) { untried = true }
+            }
+            if bare {
+                problems.append("`\(name)(…)` is one of the page's actions, which are `async throws`: call it as `Task { try? await \(name)(…) }`")
+            } else if untried {
+                problems.append("`await \(name)(…)` can throw: write `try? await \(name)(…)`")
+            }
         }
         return problems
     }

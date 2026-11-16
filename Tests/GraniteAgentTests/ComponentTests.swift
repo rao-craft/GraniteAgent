@@ -258,6 +258,16 @@ final class ComponentTests: XCTestCase {
         ]
         for row in rows { XCTAssertEqual(ComponentMake.stateReads(in: row.body, spec: spec), row.expected, row.body) }
         XCTAssertEqual(ComponentMake.stateReads(in: "Text(shelf.state.title)", spec: spec, inputs: ["shelf"]), [], "an input is the page's own")
+        // And its actions, `async throws`, are called with `try await` (Profile's `Button("Sign Out") { signOut() }`).
+        let signOut = try! ActionLine.parse("signOut = try await account.signOut()")
+        let awaited: [(body: String, expected: [String])] = [
+            ("Button(\"Sign Out\") { signOut() }", ["`signOut(…)` is one of the page's actions, which are `async throws`: call it as `Task { try? await signOut(…) }`"]),
+            ("Button(\"Sign Out\") { Task { await signOut() } }", ["`await signOut(…)` can throw: write `try? await signOut(…)`"]),
+            ("Button(\"Sign Out\") { Task { try? await signOut() } }", []),
+            ("Button(\"Sign Out\") {\n    Task {\n        try await\n            signOut()\n    }\n}", []),
+            ("Button(\"Out\") { Task { do { try await signOut() } catch {} } }; Text(\"signOutTitle\")", []),
+        ]
+        for row in awaited { XCTAssertEqual(ComponentMake.unawaited(in: row.body, actions: [signOut]), row.expected, row.body) }
     }
 
     /// A body that makes a view no one has, or awaits work the page does not have, is asked for again with the reason
