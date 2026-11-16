@@ -13,6 +13,10 @@ struct ComponentMake {
     let note: @Sendable (String) -> Void
     let yield: (GraniteFrame) -> Void
 
+    /// SwiftUI's types that are not values a page's state can hold: its state is Codable and Equatable (`GraniteState`).
+    static let unsaved: Set<String> = ["Binding", "State", "Published", "ObservedObject", "StateObject", "Environment", "EnvironmentObject",
+                                       "Namespace", "FocusState", "AnyView", "Image", "Color", "Font", "Task"]
+
     /// Names a page already answers to.
     static let reservedActions: Set<String> = ["view", "body", "center", "state", "listeners", "id", "locate", "isLoaded", "build", "dismiss", "status", "errorBanner", "isReady", "results", "content", "clock"]
 
@@ -58,6 +62,12 @@ struct ComponentMake {
                     problems.append("`\(field.name)` is named twice among the page's state, inputs and relays")
                 } else if isInput {
                     inputs.append(field)
+                } else if let held = field.type.names.first(where: { Self.unsaved.contains($0) }) {
+                    // PIN: a page's state is a value Granite saves (Codable). Told by a false refusal to add a `binding`,
+                    // the model added `binding Binding?`, and the page was accepted with a State that does not build
+                    // (Seer R7, 2026-11-15).
+                    problems.append("`\(line)`: a page's state holds values Granite can save, and `\(held)` is not one"
+                                    + (held == "Binding" ? "; the page binds its own state as `center.$state.binding.x`" : ""))
                 } else if ServiceEmitter.initial(field) == nil, !field.type.isOptional {
                     problems.append("`\(line)` needs a default (`= …`) or `?`: the page's state starts before anything is shown")
                 } else {
@@ -183,7 +193,7 @@ struct ComponentMake {
             // The rule a body asked of the model is held to, for one given in the call too.
             let unknown = Self.unknownNames(in: given, spec: spec, view: nil, inputs: inputs.map(\.name))
             if !unknown.isEmpty { throw GraniteError.refused(unknown.map { "the page's `body`: \($0)" }) }
-            spec.bodies["content"] = given
+            spec.bodies["content"] = ComponentEmitter.writingOwnState(given)
         } else if layout == .blank, let asker {
             note("asking for \(type)'s page")
             let (body, rounds)
@@ -193,7 +203,7 @@ struct ComponentMake {
                                                           probe.bodies["content"] = body
                                                           return ComponentLayouts(emitter: ComponentEmitter(spec: probe, inputs: inputs)).view()
                                                       }, check: { Self.unknownNames(in: $0, spec: spec, view: nil, inputs: inputs.map(\.name)) })
-            spec.bodies["content"] = body
+            spec.bodies["content"] = ComponentEmitter.writingOwnState(body)
             yield(.asked(type: type, rounds: rounds))
 
         }
@@ -475,20 +485,24 @@ struct ComponentMake {
                             + (service.map { ": add it to `relays` (`\(name): \($0)`)" } ?? ", and no service holds `\(field)`: add the relay, or make the service first"))
         }
         guard !bound.contains("state") else { return problems }
-        for match in body.groups(#"(?<![\w.])([$_]?)state\.([A-Za-z_]\w*)"#) where match.count == 2 {
+        let holds = spec.fields.isEmpty ? "" : " (its state holds " + spec.fields.map { "`\(SwiftName.member($0.name))`" }.joined(separator: ", ") + ")"
+        // PIN: `center.$state.binding.x` is the binding the body prompt teaches, and `$` before `state` is never the start of
+        // a read: matched from just after the `$`, R7's Seer was refused for "`state.binding`" (Seer R7, 2026-11-15).
+        let forms = #"(?<![\w.$])(center\.\$state\.binding\.|center\.state\.|[$_]?state\.)([A-Za-z_]\w*)"#
+        for match in body.groups(forms) where match.count == 2 {
             let (prefix, field) = (match[0], match[1])
             // `_state` is a Binding of the whole state: its own members are not fields.
-            if prefix == "_", ["wrappedValue", "projectedValue", "transaction", "animation"].contains(field) { continue }
-            guard said.insert(prefix + "state." + field).inserted else { continue }
+            if prefix == "_state.", ["wrappedValue", "projectedValue", "transaction", "animation"].contains(field) { continue }
+            guard said.insert(prefix + field).inserted else { continue }
             let has = own.contains(field)
-            if prefix == "$" {
-                problems.append("`$state.\(field)`: a page has no `$state`; it binds its own state as `_state.\(field)`"
-                                + (has ? "" : ", and its state has no `\(field)` yet: add it to the call's `state` (`\(field) Type = …`)"))
+            if prefix == "$state." {
+                problems.append("`$state.\(field)`: a page has no `$state`; it binds its own state as `center.$state.binding.\(field)`"
+                                + (has ? "" : ", and its state has no `\(field)` yet: add it to the call's `state` (`\(field) Type = …`)" + holds))
             } else if !has {
                 let read = holders(field)
-                problems.append("`\(prefix)state.\(field)`: the page's state has no `\(field)`"
+                problems.append("`\(prefix)\(field)`: the page's state has no `\(field)`"
                                 + (read.isEmpty ? ": add it to the call's `state` (`\(field) Type = …`)" : "; it is read as " + read.joined(separator: " or "))
-                                + (spec.fields.isEmpty ? "" : " (its state holds " + spec.fields.map { "`\(SwiftName.member($0.name))`" }.joined(separator: ", ") + ")"))
+                                + holds)
             }
         }
         return problems

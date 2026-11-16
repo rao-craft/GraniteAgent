@@ -124,9 +124,15 @@ struct ComponentEmitter {
         return code.text
     }
 
-    /// `state.query = ""` written as the page's own state is written: `_state.query.wrappedValue = ""`.
+    /// `state.query = ""` written as the page's own state is written: `_state.query.wrappedValue = ""`, and `+=` and the
+    /// other compound assignments the same way. An action's statements and a page's body are both written so: a page's
+    /// `state` can only be read.
+    ///
+    /// PIN: A BODY WRITES ITS STATE AS AN ACTION DOES (Seer R7, 2026-11-15). The Void's button cleared its field with
+    /// `state.text = ""` inside a `Task`, which does not build: `state` is get-only on a page.
     static func writingOwnState(_ statement: String) -> String {
-        statement.replacingOccurrences(of: #"(?<![\w.])state\.(\w+)\s*=(?!=)"#, with: "_state.$1.wrappedValue =", options: .regularExpression)
+        statement.replacingOccurrences(of: #"(?<![\w.$])state\.(\w+)[ \t]*([-+*/%]?=)(?!=)"#, with: "_state.$1.wrappedValue $2",
+                                       options: .regularExpression)
     }
 
     // MARK: - Reducers

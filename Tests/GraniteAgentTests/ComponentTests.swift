@@ -246,15 +246,21 @@ final class ComponentTests: XCTestCase {
             ("Text(rooms.state.title)",
              ["`rooms.state.title`: `rooms` is not one of the page's relays, and no service holds `title`: add the relay, or make the service first"]),
             ("TextField(\"Ask\", text: $state.text)",
-             ["`$state.text`: a page has no `$state`; it binds its own state as `_state.text`, and its state has no `text` yet: add it to the call's `state` (`text Type = …`)"]),
-            ("TextField(\"Ask\", text: $state.draft)", ["`$state.draft`: a page has no `$state`; it binds its own state as `_state.draft`"]),
+             ["`$state.text`: a page has no `$state`; it binds its own state as `center.$state.binding.text`, and its state has no `text` yet: add it to the call's `state` (`text Type = …`) (its state holds `draft`)"]),
+            ("TextField(\"Ask\", text: $state.draft)", ["`$state.draft`: a page has no `$state`; it binds its own state as `center.$state.binding.draft`"]),
+            // Seer R7: the binding the body prompt teaches, and reads through `center`, are the page's own state.
+            ("TextField(\"Ask\", text: center.$state.binding.draft)", []),
+            ("TextField(\"Ask\", text: center.$state.binding.text)",
+             ["`center.$state.binding.text`: the page's state has no `text`: add it to the call's `state` (`text Type = …`) (its state holds `draft`)"]),
+            ("Text(center.state.draft)", []),
+            ("Text(center.state.mood)", ["`center.state.mood`: the page's state has no `mood`: add it to the call's `state` (`mood Type = …`) (its state holds `draft`)"]),
             ("if state.thinking { ProgressView() }",
              ["`state.thinking`: the page's state has no `thinking`; it is read as `chat.state.thinking` (its state holds `draft`)"]),
             ("Text(_state.wrappedValue.mood)", []),
             ("TextField(\"Ask\", text: _state.draft); ForEach(chat.state.exchanges) { e in Text(e.reply) }", []),
             ("if let state = chat.state.exchanges.last { Text(state.reply) }", []),
             ("ForEach(rooms) { room in Text(room.state.title) }", []),
-            ("Text(center.state.draft); Text(self.state.draft)", []),
+            ("Text(self.state.draft)", []),
         ]
         for row in rows { XCTAssertEqual(ComponentMake.stateReads(in: row.body, spec: spec), row.expected, row.body) }
         XCTAssertEqual(ComponentMake.stateReads(in: "Text(shelf.state.title)", spec: spec, inputs: ["shelf"]), [], "an input is the page's own")
@@ -378,14 +384,17 @@ final class ComponentTests: XCTestCase {
 
     func testAPageItCannotDrawIsRefusedWithEveryReason() async throws {
         let folder = try await app()
-        let input = GraniteAppAgent.Input(make: .component, type: "FeedComponent", relays: ["feed: FeedService"], layout: .threePane,
+        let input = GraniteAppAgent.Input(make: .component, type: "FeedComponent", state: ["binding Binding?", "tint Color?"],
+                                          relays: ["feed: FeedService"], layout: .threePane,
                                           shows: ["title = \"Feed\""], actions: ["view = feed.load()", "refresh = x", "refresh = y"])
         do {
             try await Fixture.call(input, in: folder)
             XCTFail("the page is refused")
         } catch {
             let text = "\(error)"
-            for reason in ["`FeedService` is not in the project", "add `items = …`", "add `selection = …`", "`view` is the page's own", "`refresh` is named twice"] {
+            for reason in ["`FeedService` is not in the project", "add `items = …`", "add `selection = …`", "`view` is the page's own", "`refresh` is named twice",
+                           "`binding Binding?`: a page's state holds values Granite can save, and `Binding` is not one; the page binds its own state as `center.$state.binding.x`",
+                           "`tint Color?`: a page's state holds values Granite can save, and `Color` is not one"] {
                 XCTAssertTrue(text.contains(reason), "\(reason) in \(text)")
             }
         }
@@ -428,6 +437,13 @@ final class ComponentTests: XCTestCase {
         XCTAssertFalse(file.contains("? = nil"), "a view stores no closures")
         XCTAssertFalse(file.contains("if let share"), "its controls are always drawn")
         XCTAssertEqual(ComponentEmitter.writingOwnState("state.query = \"\"; feed.state.x == 1"), "_state.query.wrappedValue = \"\"; feed.state.x == 1")
+        // Seer R7: a body's writes, compound ones too, and never a comparison, a relay's state or a binding.
+        for (body, written) in [("Task { try? await send(text: state.text); state.text = \"\" }", "Task { try? await send(text: state.text); _state.text.wrappedValue = \"\" }"),
+                                ("Button(\"+\") { state.count += 1 }", "Button(\"+\") { _state.count.wrappedValue += 1 }"),
+                                ("if state.count >= 1, state.count != 2 { Text(\"x\") }", "if state.count >= 1, state.count != 2 { Text(\"x\") }"),
+                                ("TextField(\"a\", text: center.$state.binding.text)", "TextField(\"a\", text: center.$state.binding.text)")] {
+            XCTAssertEqual(ComponentEmitter.writingOwnState(body), written, body)
+        }
     }
 
     /// A page over standard values (a `[String]` of tags) draws them by `id: \.self`: `String` is not Identifiable.
