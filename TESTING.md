@@ -133,7 +133,7 @@ then, once Seer, Models, Profile and The World are made with `layout.present(.wo
 ```
 
 ```json
-{ "make": "modals", "toasts": "window" }
+{ "make": "modals", "toasts": "window", "toastDesign": "serif" }
 ```
 
 **Checks**:

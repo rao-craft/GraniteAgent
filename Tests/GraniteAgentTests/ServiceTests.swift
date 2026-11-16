@@ -266,6 +266,7 @@ final class ServiceTests: XCTestCase {
             (#"{"type":"Feed","events":["load -> posts = API.posts()"],"state":["posts [Post] = []"]}"#, .service),
             (#"{"style":"tabs","destinations":["feed: Feed \"Feed\" house"]}"#, .navigation),
             (#"{"toasts":"window"}"#, .modals),
+            (#"{"toasts":"window","toastDesign":"serif"}"#, .modals),
             (#"{"overlays":["Onboarding"],"tabBar":"icons"}"#, .navigation),
             (#"{"name":"Seer","bundleId":"app.seer.ios"}"#, .project),
             (#"{"make":"package","name":"SeerKit","layout":"list"}"#, .package),

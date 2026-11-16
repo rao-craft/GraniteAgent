@@ -175,6 +175,15 @@
       "description" : "the colour of the tab bar's selected item, a Swift colour: `Color.accent`; the app's accent colour when left out",
       "type" : "string"
     },
+    "toastDesign" : {
+      "description" : "the font design of the toasts' text in their own window, with `toasts: window`: serif, rounded or monospaced; the system's when left out",
+      "enum" : [
+        "serif",
+        "rounded",
+        "monospaced"
+      ],
+      "type" : "string"
+    },
     "toasts" : {
       "description" : "where modals shows its toasts: overlay (over the root view; when left out) or window (on iOS in a window of their own one level above alerts, `.alert + 1`, over every sheet and alert, a touch elsewhere passing through, the styles in circle symbols; the Mac keeps the overlay)",
       "enum" : [

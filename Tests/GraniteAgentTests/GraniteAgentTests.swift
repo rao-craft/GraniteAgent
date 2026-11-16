@@ -39,6 +39,7 @@ final class GraniteAgentTests: XCTestCase {
             .init(name: "tabFeedback", schema: .choice(["light", "medium", "heavy", "soft", "rigid"]), required: false),
             .init(name: "overlays", schema: lines, required: false),
             .init(name: "toasts", schema: .choice(["overlay", "window"]), required: false),
+            .init(name: "toastDesign", schema: .choice(["serif", "rounded", "monospaced"]), required: false),
             .init(name: "root", schema: .string, required: false),
             .init(name: "packages", schema: lines, required: false),
             .init(name: "imports", schema: lines, required: false),
@@ -60,7 +61,7 @@ final class GraniteAgentTests: XCTestCase {
                      "destinations", "`default`", "`sheet`", "layout.present", "\"gate\": \"account.state.session == nil\"", "modals.sheet",
                      "`sheet over models`", "`sheet over profile`", "`auth.signup -> auth`", "\"toasts\": \"window\"",
                      "SeerMark().frame(width: 30, height: 30)", "\"tabBar\": \"icons\"", "\"tint\": \"Color.accent\"", "\"tabFeedback\": \"light\"",
-                     "\"overlays\": [\"Onboarding\"]",
+                     "\"overlays\": [\"Onboarding\"]", "subtitle: \"And assigned to your note\"", "\"toastDesign\": \"serif\"",
                      "Packages/RecipeKit", "ContentView", "let recipe Recipe", "Not for"] {
             XCTAssertTrue(guide.contains(word), "the guide says \(word)")
         }

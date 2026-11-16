@@ -595,10 +595,20 @@ enum ModalTemplates {
 
         """
 
-    /// The toast view of `toasts: window`, a card as wide as the screen: the style's symbol at 22 beside the message, on
-    /// the ultra-thin material, rounded at 24, with a shadow, the four styles in the system's circle symbols and
-    /// colours (as Seer's original draws its toast, Shared/Views/Toast/ToastView.swift).
-    static let windowToastView = """
+    /// The toast model of `toasts: window`: a subtitle under the message when one is given.
+    static let windowToast = toast.replacingOccurrences(of: "    var message: String\n", with: "    var message: String\n    /// A second line under the message, smaller; none when left out.\n    var subtitle: String? = nil\n")
+
+    /// The service of `toasts: window`: `toast(_:subtitle:style:)`.
+    static let windowModalService = modalService
+        .replacingOccurrences(of: "/// Shows a message over the app for a few seconds; a tap puts it away sooner.\n    func toast(_ message: String, style: ModalToast.Style = .info) {\n        let toast = ModalToast(message: message, style: style)",
+                              with: "/// Shows a message over the app for a few seconds, a subtitle under it when given; a tap puts it away sooner.\n    func toast(_ message: String, subtitle: String? = nil, style: ModalToast.Style = .info) {\n        let toast = ModalToast(message: message, subtitle: subtitle, style: style)")
+
+    /// The toast view of `toasts: window`, a card as wide as the screen: the style's symbol at 22 beside the message
+    /// over its subtitle, in `design`, on the ultra-thin material, rounded at 24, with a shadow, the four styles in the
+    /// system's circle symbols and colours (as Seer's original draws its toast, Shared/Views/Toast/ToastView.swift).
+    static func windowToastView(design: GraniteToastDesign?) -> String {
+        let design = design.map { ".\($0.rawValue)" } ?? ".default"
+        return """
         import SwiftUI
 
         /// A message over the app for a few seconds, in the toasts' own window: a card as wide as the screen; a tap puts
@@ -612,10 +622,17 @@ enum ModalTemplates {
                     Image(systemName: symbol)
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(tint)
-                    Text(toast.message)
-                        .font(.headline.weight(.regular))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(toast.message)
+                            .font(.system(.headline, design: \(design), weight: .regular))
+                            .foregroundStyle(.primary)
+                        if let subtitle = toast.subtitle {
+                            Text(subtitle)
+                                .font(.system(.caption, design: \(design), weight: .light))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
@@ -650,6 +667,7 @@ enum ModalTemplates {
         }
 
         """
+    }
 
     /// The host of `toasts: window`: on iOS the toasts in a window of their own over the scene, one level above alerts,
     /// so a toast shows over every sheet and alert and a touch anywhere but on a toast passes through; the Mac keeps

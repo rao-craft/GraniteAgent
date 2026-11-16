@@ -63,6 +63,8 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         public var overlays: [String]?
         /// Where modals shows its toasts: over the root view, or on iOS in a window of their own above alerts.
         public var toasts: GraniteToasts?
+        /// The font design of the toasts' text in their own window: serif, rounded or monospaced.
+        public var toastDesign: GraniteToastDesign?
         /// The root page; `Home` when left out.
         public var root: String?
         /// Remote packages the app links, pinned: `https://github.com/kean/Nuke@<revision> Nuke NukeUI`.
@@ -82,13 +84,13 @@ public struct GraniteAppAgent: GraniteAgentPackage {
                     into: String? = nil, state: [String]? = nil, events: [String]? = nil, relays: [String]? = nil,
                     layout: GraniteLayout? = nil, shows: [String]? = nil, actions: [String]? = nil, views: [String]? = nil,
                     body: String? = nil, destinations: [String]? = nil, gate: String? = nil, style: GraniteStyle? = nil,
-                    tabBar: GraniteTabBar? = nil, tint: String? = nil, tabFeedback: GraniteFeedback? = nil, overlays: [String]? = nil, toasts: GraniteToasts? = nil,
+                    tabBar: GraniteTabBar? = nil, tint: String? = nil, tabFeedback: GraniteFeedback? = nil, overlays: [String]? = nil, toasts: GraniteToasts? = nil, toastDesign: GraniteToastDesign? = nil,
                     root: String? = nil, packages: [String]? = nil, imports: [String]? = nil, persist: Bool? = nil, notes: String? = nil,
                     rounds: Int? = nil, directory: String? = nil) {
             self.make = make; self.name = name; self.bundleId = bundleId; self.team = team; self.platforms = platforms; self.type = type; self.into = into
             self.state = state; self.events = events; self.relays = relays; self.layout = layout; self.shows = shows; self.body = body
             self.actions = actions; self.views = views; self.destinations = destinations; self.gate = gate; self.style = style
-            self.tabBar = tabBar; self.tint = tint; self.tabFeedback = tabFeedback; self.overlays = overlays; self.toasts = toasts
+            self.tabBar = tabBar; self.tint = tint; self.tabFeedback = tabFeedback; self.overlays = overlays; self.toasts = toasts; self.toastDesign = toastDesign
             self.root = root
             self.packages = packages; self.imports = imports; self.persist = persist; self.notes = notes; self.rounds = rounds
             self.directory = directory
@@ -96,7 +98,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
 
         private enum CodingKeys: String, CodingKey, CaseIterable {
             case make, name, bundleId, team, platforms, type, into, state, events, relays, layout, shows, actions, views, body, destinations
-            case gate, style, tabBar, tint, tabFeedback, overlays, toasts, root, packages, imports, persist, notes, rounds, directory
+            case gate, style, tabBar, tint, tabFeedback, overlays, toasts, toastDesign, root, packages, imports, persist, notes, rounds, directory
         }
 
         /// Any key a call carries, to find the ones that are not fields.
@@ -112,7 +114,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
             "endpoints": "events", "endpoint": "events", "reducers": "events", "work": "events", "methods": "events",
             "fields": "state", "properties": "state", "entities": "state",
             "routes": "destinations", "tabs": "destinations", "sheets": "destinations", "default": "destinations", "condition": "gate",
-            "aliases": "destinations", "over": "destinations", "toast": "toasts",
+            "aliases": "destinations", "over": "destinations", "toast": "toasts", "toastFont": "toastDesign",
             "overlay": "overlays", "layers": "overlays", "tabLabels": "tabBar", "tabTitles": "tabBar", "tabHaptics": "tabFeedback",
             "subviews": "views", "rows": "shows", "items": "shows",
             "bundle": "bundleId", "bundleID": "bundleId", "folder": "into", "path": "into", "kind": "make",
@@ -160,6 +162,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
             tabFeedback = try c.decodeIfPresent(GraniteFeedback.self, forKey: .tabFeedback)
             overlays = try Self.lines(c, .overlays)
             toasts = try c.decodeIfPresent(GraniteToasts.self, forKey: .toasts)
+            toastDesign = try c.decodeIfPresent(GraniteToastDesign.self, forKey: .toastDesign)
             root = try c.decodeIfPresent(String.self, forKey: .root)
             packages = try Self.lines(c, .packages)
             imports = try Self.lines(c, .imports)
@@ -179,7 +182,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         /// only a page has a layout, shows, actions, views or a body.
         static func make(by keys: Set<String>) throws -> GraniteMake {
             if !keys.isDisjoint(with: ["destinations", "tabBar", "tabFeedback", "overlays"]) { return .navigation }
-            if keys.contains("toasts") { return .modals }
+            if !keys.isDisjoint(with: ["toasts", "toastDesign"]) { return .modals }
             if keys.contains("events") { return .service }
             if !keys.isDisjoint(with: ["layout", "shows", "actions", "views", "body"]) { return .component }
             if !keys.isDisjoint(with: ["bundleId", "team", "platforms"]) { return .project }
@@ -242,6 +245,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
         "tabFeedback": "the impact felt when the tab changes on iPhone: light, medium, heavy, soft, rigid; none when left out",
         "overlays": "views navigation draws over the tabs, bottom to top, under every sheet: a page the app has, `Onboarding` (a first-run layer that takes touches only where it draws)",
         "toasts": "where modals shows its toasts: overlay (over the root view; when left out) or window (on iOS in a window of their own one level above alerts, `.alert + 1`, over every sheet and alert, a touch elsewhere passing through, the styles in circle symbols; the Mac keeps the overlay)",
+        "toastDesign": "the font design of the toasts' text in their own window, with `toasts: window`: serif, rounded or monospaced; the system's when left out",
         "root": "the root page; Home when left out",
         "packages": "remote packages the app links, pinned: `https://github.com/kean/Nuke@<40-hex revision> Nuke NukeUI`",
         "imports": "modules the files import beside Foundation, SwiftUI and Granite; a local package's are found on their own",
@@ -261,7 +265,7 @@ public struct GraniteAppAgent: GraniteAgentPackage {
 
         navigation: {"make": "navigation", "destinations": ["recipes: RecipeList \"Recipes\" book", "search: RecipeSearch \"Search\" magnifyingglass", "settings: Settings \"Settings\" gearshape"], "style": "adaptive"} writes the destinations, tabs on iPhone and a sidebar on iPad and the Mac, a layout service, routes and Device, and shows them once the app is ready. The pages must exist first. After a symbol, `default` opens the app on that destination, `sheet` puts it in a sheet over the tabs (a page opens it with `layout.present(.settings)`), and `gate` shows it instead of the tabs while the `gate` condition holds: `"gate": "account.state.session == nil"` with `"relays": ["account: AccountService"]`. A sheet line may end `sheet over models` (a launch that names it selects that tab first) or `sheet over profile` (it goes up stacked on that sheet); in use a sheet goes up over whatever is up. A line `auth.signup -> auth` is a launch alias: `-destination auth.signup` opens what `-destination auth` opens, and the page reads the name itself. In the symbol's place a line may name a view the app has, drawn once as the tab's image in its own colours (`seer: Seer \"Seer\" SeerMark().frame(width: 30, height: 30) default`); `"tabBar": "icons"` drops the tabs' titles, `"tint": "Color.accent"` colours the selected tab, `"tabFeedback": "light"` gives a light impact on a tab change, and `"overlays": ["Onboarding"]` draws a page over the tabs, under every sheet.
 
-        modals: {"make": "modals"} writes ModalService and its host: `modals.sheet(id: "compose", detents: [.medium, .large]) { … }`, `modals.alert(…)`, `modals.toast("Saved", style: .success)`, `modals.travel(id: "draft", title: "Draft") { … }` (a panel that stays while you browse), and on the Mac `modals.window(id:title:size:) { … }`. `"toasts": "window"` shows the toasts on iOS in a window of their own above alerts, over every sheet.
+        modals: {"make": "modals"} writes ModalService and its host: `modals.sheet(id: "compose", detents: [.medium, .large]) { … }`, `modals.alert(…)`, `modals.toast("Saved", style: .success)`, `modals.travel(id: "draft", title: "Draft") { … }` (a panel that stays while you browse), and on the Mac `modals.window(id:title:size:) { … }`. `"toasts": "window"` shows the toasts on iOS in a window of their own above alerts, over every sheet, each a card with a subtitle when given (`modals.toast("Category created!", subtitle: "And assigned to your note", style: .success)`), its text in `"toastDesign": "serif"` when the app's type is serif.
 
         package: {"make": "package", "name": "RecipeKit"} writes a kit in Packages/RecipeKit and links it into the app; `make: service` with `"into": "Packages/RecipeKit"` puts a public service in it.
 

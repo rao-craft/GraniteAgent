@@ -39,6 +39,7 @@ granite's own log.
 | `tabFeedback` | no | the impact felt when the tab changes on iPhone: light, medium, heavy, soft, rigid; none when left out |
 | `overlays` | no | views navigation draws over the tabs, bottom to top, under every sheet: a page the app has, `Onboarding` (a first-run layer that takes touches only where it draws) |
 | `toasts` | no | where modals shows its toasts: overlay (over the root view; when left out) or window (on iOS in a window of their own one level above alerts, `.alert + 1`, over every sheet and alert, a touch elsewhere passing through, the styles in circle symbols; the Mac keeps the overlay) |
+| `toastDesign` | no | the font design of the toasts' text in their own window, with `toasts: window`: serif, rounded or monospaced; the system's when left out |
 | `root` | no | the root page; Home when left out |
 | `packages` | no | remote packages the app links, pinned: `https://github.com/kean/Nuke@<40-hex revision> Nuke NukeUI` |
 | `imports` | no | modules the files import beside Foundation, SwiftUI and Granite; a local package's are found on their own |
@@ -98,6 +99,10 @@ passthrough `UIWindow` at `.alert + 1` over the scene, each a card as wide as th
 toast (the style's symbol at 22 semibold beside the message, the ultra-thin material rounded at 24, a shadow, a
 spring of 0.4 s, 3 s on screen), the success, error, warning and info styles in green `checkmark.circle.fill`, red
 `xmark.circle.fill`, orange `exclamationmark.triangle.fill` and blue `info.circle.fill`; the Mac keeps the overlay.
+In the window a toast takes a subtitle under its message, as the original's do (`modals.toast("Category created!",
+subtitle: "And assigned to your note", style: .success)`), the message in the headline and the subtitle in the
+caption, secondary, both in `toastDesign` (`serif` for Seer, the system's design when left out); `toastDesign`
+without `toasts: window` is refused.
 
 The shell is also held to the original's look (Components/Main/MainView.swift): its tabs show their images alone,
 the middle one is the app's medallion in full colour, the selected tab takes the brand's tint, a tab change gives a

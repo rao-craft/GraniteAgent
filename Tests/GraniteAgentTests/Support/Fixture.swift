@@ -170,8 +170,8 @@ enum Fixture {
     /// The page Settings goes up in, for the shell above.
     static let seerSettings = placeholderPage("Settings", symbol: "gearshape")
 
-    /// Seer's toasts, in a window of their own one level above alerts.
-    static let seerToasts = GraniteAppAgent.Input(make: .modals, toasts: .window)
+    /// Seer's toasts, in a window of their own one level above alerts, their text in the serif design as its type is.
+    static let seerToasts = GraniteAppAgent.Input(make: .modals, toasts: .window, toastDesign: .serif)
 
     /// Seer's shell as the original draws it (Components/Main/MainView.swift): the tabs' images alone, the mark drawn as
     /// the middle tab's image at 30, the accent on the selected tab, a light impact on a tab change, and the first-run

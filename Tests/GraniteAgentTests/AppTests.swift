@@ -405,8 +405,9 @@ final class AppTests: XCTestCase {
     }
 
     /// The toasts' own window is opt-in (Seer, 2026-11-15): `toasts: window` hosts them on iOS in a passthrough window
-    /// one level above alerts, the four styles in the system's symbols, the Mac keeping the overlay; made again without
-    /// it, the files are as they were.
+    /// one level above alerts, the four styles in the system's symbols, each a card as the original draws it with a
+    /// subtitle when given, in `toastDesign`; the Mac keeps the overlay. Made again without it, the files are as they
+    /// were; `toastDesign` without the window is refused.
     func testTheToastWindowIsOptIn() async throws {
         let folder = try await app(pages: false)
         let result = try await Fixture.call(Fixture.seerToasts, in: folder)
@@ -426,14 +427,33 @@ final class AppTests: XCTestCase {
         // The original's toast (Shared/Views/Toast/ToastView.swift, ToastService.swift): a card as wide as the screen.
         for line in ["HStack(spacing: 12) {", ".font(.system(size: 22, weight: .semibold))", ".background(.ultraThinMaterial)",
                      ".clipShape(RoundedRectangle(cornerRadius: 24))", ".shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)",
-                     ".padding(.horizontal, 16)", "case .info: .blue"] {
+                     ".padding(.horizontal, 16)", "case .info: .blue", "VStack(alignment: .leading, spacing: 2) {",
+                     ".font(.system(.headline, design: .serif, weight: .regular))", "if let subtitle = toast.subtitle {",
+                     ".font(.system(.caption, design: .serif, weight: .light))\n                        .foregroundStyle(.secondary)\n                        .lineLimit(2)"] {
             XCTAssertTrue(toast.contains(line), line)
         }
         XCTAssertTrue(hosting.contains(".animation(.spring(response: 0.4, dampingFraction: 0.8), value: toasts)"), hosting)
+        XCTAssertTrue(try read(folder, "Services/ModalService/Models/ModalToast.swift").contains("    var message: String\n    /// A second line under the message, smaller; none when left out.\n    var subtitle: String? = nil\n    var style: Style"))
+        XCTAssertTrue(try read(folder, "Services/ModalService/ModalService.swift").contains(
+            "func toast(_ message: String, subtitle: String? = nil, style: ModalToast.Style = .info) {\n        let toast = ModalToast(message: message, subtitle: subtitle, style: style)"))
+        var plain = Fixture.seerToasts
+        plain.toastDesign = nil
+        try await Fixture.call(plain, in: folder)
+        XCTAssertTrue(try read(folder, "Services/ModalService/Views/ModalToastView.swift").contains(".font(.system(.headline, design: .default, weight: .regular))"))
+        var designOnly = Fixture.modals
+        designOnly.toastDesign = .serif
+        do {
+            try await Fixture.call(designOnly, in: folder)
+            XCTFail("`toastDesign` without the window is refused")
+        } catch {
+            XCTAssertTrue("\(error)".contains("`toastDesign` is the type of the toasts' own window: add `toasts: window`"), "\(error)")
+        }
 
         try await Fixture.call(Fixture.modals, in: folder)
         XCTAssertEqual(try read(folder, "Shared/Utility/ModalHosting.swift"), ModalTemplates.hosting)
         XCTAssertEqual(try read(folder, "Services/ModalService/Views/ModalToastView.swift"), ModalTemplates.toastView)
+        XCTAssertEqual(try read(folder, "Services/ModalService/Models/ModalToast.swift"), ModalTemplates.toast)
+        XCTAssertEqual(try read(folder, "Services/ModalService/ModalService.swift"), ModalTemplates.modalService)
     }
 
     func testAKitInAnAppIsLinkedIntoBothApps() async throws {
